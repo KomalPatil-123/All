@@ -1,0 +1,861 @@
+using CarWashAPI.Models;
+using Microsoft.IdentityModel.Tokens;
+using System;
+using System.Collections.Generic;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Text;
+
+namespace CarWashAPI.Services
+{
+    public interface IJwtService
+    {
+        string GenerateToken(Admin admin);
+    }
+
+    public class JwtService : IJwtService
+    {
+        private readonly string _secretKey;
+        private readonly string _issuer;
+        private readonly string _audience;
+
+        public JwtService(IConfiguration configuration)
+        {
+            // Ensure that the Secret, Issuer, and Audience are correctly configured in your appsettings.json
+            _secretKey = configuration["AppSettings:Secret"];
+            _issuer = configuration["AppSettings:Issuer"];
+            _audience = configuration["AppSettings:Audience"];
+        }
+
+        public string GenerateToken(Admin admin)
+        {
+            // Adding claims to the JWT token
+            var claims = new List<Claim>
+            {
+                new Claim(ClaimTypes.NameIdentifier, admin.AdminId.ToString()),                   
+                new Claim(ClaimTypes.Email, admin.Email),                 
+                new Claim(ClaimTypes.Role, "admin"),
+                new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())                        
+            };
+
+            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes("thisisaverylongsecretkeyof32characters!!"));
+            var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+
+            // Create the JWT token
+            var token = new JwtSecurityToken(
+                issuer: _issuer,
+                audience: _audience,
+                claims: claims,   // Adding claims to the JWT token
+                expires: DateTime.Now.AddDays(1), // Token expiration time (1 day)
+                signingCredentials: creds
+            );
+
+            // Return the serialized JWT token as a string
+            return new JwtSecurityTokenHandler().WriteToken(token);
+        }
+    }
+}
+
+-----------------------------------------------------------------------------
+
+Operations by Role
+1. Customer Operations (User Role)
+A Customer (User) can be a regular user who either books a car wash service or performs additional operations. The Customer role may also include a Washer (if the user is a car washer as well).
+Key Operations a Customer Can Perform:
+Register / Sign Up
+Customers can register on the platform by providing their personal information (name, email, phone number, address, etc.).
+If a user wants to act as both a customer and a washer, they can specify their role during registration (e.g., IsWasher = true).
+Login / Authentication
+A customer can log into the system using their credentials (email/password).
+If the login is successful, the user receives a JWT token for authorization on subsequent requests.
+View and Manage Profile
+Customers can view and update their personal details like name, email, phone number, and address.
+Customers can update their IsWasher status if they wish to become a car washer.
+Add and Manage Cars
+Customers can add their vehicles (Car) to the platform by providing details like make, model, color, license plate, and images.
+They can update or remove vehicles from their profile.
+Place an Order
+A customer can place an order for a car wash service.
+The order will include the car being washed, the service/package selected, and the total amount.
+The status of the order can be "Pending", "In Progress", or "Completed".
+View Order History
+Customers can view their past orders, including the car being washed, the package chosen, the total amount, and the status of the service.
+Make Payment
+Once a car wash service is completed, the customer can make a payment for the service.
+The payment can be via different methods (e.g., cash, card, online payment).
+Rate and Review
+After the car wash is complete, customers can rate and review the service provided.
+Reviews include a rating (e.g., 1 to 5 stars) and comments about the experience.
+View Reviews
+Customers can view their reviews and feedback given to specific washers or services.
+Customer Operations Flow:
+Register → Login → View Profile → Add Cars → Place Order → Make Payment → Rate/Review Washer → View Order History.
+2. Washer Operations
+A Washer is a user who performs car wash services. A washer can be either an individual car washer (a part-time or full-time service provider) or an admin who performs the car washing tasks.
+Key Operations a Washer Can Perform:
+Login
+Washers can log in using their credentials (email/password). Washers are typically regular users marked with IsWasher = true.
+View Assigned Orders
+Washers can view a list of orders assigned to them (from the admin or system) based on the current active jobs.
+Orders will include the car to be washed, the package chosen, and the customer information.
+Accept/Start Washing Orders
+The washer can mark an order as "In Progress" when they start the washing process.
+This allows the customer to see the status of their order.
+Update Order Status
+Washers can update the order status from "In Progress" to "Completed" once the washing service is finished.
+Washers can also add completion notes (e.g., issues with the car, special requests).
+Rate and Review the Service
+Washers can provide feedback about the service (in case the car wash process is linked with a review of the customer's behavior or the type of car).
+View Order History
+Washers can view their past orders (completed jobs) and see the feedback and reviews left by the customers.
+Earn Payments (Track Earnings)
+Washers may be able to track their earnings based on completed orders.
+Respond to Reviews (Optional)
+Depending on the system, washers might be able to respond to customer reviews (e.g., addressing complaints or acknowledging compliments).
+Washer Operations Flow:
+Login → View Assigned Orders → Accept Order → Start Washing → Update Order Status to Complete → View Order History.
+3. Admin Operations
+An Admin is the super-user with all the permissions to manage the platform, users, orders, packages, payments, and reviews.
+Key Operations an Admin Can Perform:
+Login
+Admins can log in using their credentials (email/password).
+Admins are typically separate from regular customers and washers in terms of roles.
+Manage Users
+Admins can create new users, view all user profiles, update user details, and deactivate or delete users.
+Admins can manage user roles (e.g., change a user from a regular customer to a washer, or vice versa).
+Create and Manage Washers
+Admins can assign or update the role of a user to make them a washer.
+Admins can also view washers' profiles, track their performance, and manage their earnings.
+Manage Orders
+Admins can view all orders in the system, including both pending and completed orders.
+Admins can assign specific washers to orders or reassign orders to available washers.
+Admins can update the status of orders and monitor order progress.
+Manage Packages
+Admins can create, update, or remove different types of car wash packages.
+Each package would have a name, description, price, and active status.
+View Payments
+Admins can track payments made by customers, including the amount paid, payment methods, and payment status.
+Admins can manage refunds or payment disputes if necessary.
+View Reviews
+Admins can see all customer reviews for washers and services.
+Admins can respond to reviews, take corrective actions for bad reviews, and ensure quality control.
+Manage Packages and Pricing
+Admins can update the pricing and description of different packages offered for car washing services.
+Generate Reports
+Admins can generate reports related to user activity, order history, reviews, earnings, etc.
+Manage System Configuration (Optional)
+Admins may have access to system settings like changing JWT token expiration times, managing platform configurations, etc.
+Admin Operations Flow:
+Login → Manage Users (Create, Update, Deactivate) → Assign Washer Roles → Manage Orders (Assign/Track) → Manage Packages → View Payments → View and Respond to Reviews → Generate Reports.
+Summary of Role Operations
+Operation
+	
+Customer (User)
+	
+Washer
+	
+Admin
+
+
+Register
+	
+✔️
+	
+✔️
+	
+❌
+
+
+Login
+	
+✔️
+	
+✔️
+	
+✔️
+
+
+View Profile
+	
+✔️
+	
+✔️
+	
+✔️
+
+
+Update Profile
+	
+✔️
+	
+✔️
+	
+✔️
+
+
+Add/Remove Car
+	
+✔️
+	
+❌
+	
+✔️
+
+
+Place Order
+	
+✔️
+	
+❌
+	
+✔️
+
+
+View Order History
+	
+✔️
+	
+✔️
+	
+✔️
+
+
+Make Payment
+	
+✔️
+	
+❌
+	
+✔️
+
+
+Rate/Review Washer
+	
+✔️
+	
+✔️
+	
+✔️
+
+
+Manage Orders
+	
+❌
+	
+✔️
+	
+✔️
+
+
+Accept/Start Washing Orders
+	
+❌
+	
+✔️
+	
+❌
+
+
+Update Order Status
+	
+❌
+	
+✔️
+	
+✔️
+
+
+Manage Users
+	
+❌
+	
+❌
+	
+✔️
+
+
+Manage Packages
+	
+❌
+	
+❌
+	
+✔️
+
+
+Track Payments
+	
+❌
+	
+❌
+	
+✔️
+
+
+Generate Reports
+	
+❌
+	
+❌
+	
+✔️
+Conclusion
+Customers primarily interact with the platform for registering, ordering services, paying, and rating services.
+Washers can manage their orders, start washing services, update statuses, and track their performance (e.g., reviews).
+Admins have full control to manage users, track orders, assign washers, manage packages, view payments, track reviews, and generate reports.
+This breakdown should give you a clear understanding of t
+Suggested API Endpoints for Admin
+Here are some possible endpoints an admin might use in the system:
+1. User Management
+GET /admin/users — View all users
+POST /admin/users/{userId}/deactivate — Deactivate a user
+POST /admin/users/{userId}/delete — Delete a user
+2. Car Management
+GET /admin/cars — View all cars
+POST /admin/cars/{carId}/approve — Approve a car for service
+POST /admin/cars/{carId}/delete — Delete a car
+3. Order Management
+GET /admin/orders — View all orders
+POST /admin/orders/{orderId}/approve — Approve an order
+POST /admin/orders/{orderId}/cancel — Cancel an order
+PUT /admin/orders/{orderId}/status — Update order status
+4. Payment Management
+GET /admin/payments — View all payment transactions
+POST /admin/payments/{paymentId}/refund — Issue a refund
+5. Service Package Management
+GET /admin/packages — View all service packages
+POST /admin/packages — Create a new service package
+PUT /admin/packages/{packageId} — Update an existing package
+DELETE /admin/packages/{packageId} — Delete a service package
+6. Review Management
+GET /admin/reviews — View all reviews
+POST /admin/reviews/{reviewId}/approve — Approve a review
+POST /admin/reviews/{reviewId}/delete — Delete a review
+7. Reporting & Analytics
+GET /admin/reports/revenue — View revenue report
+GET /admin/reports/services-usage — View service usage report
+GET /admin/reports/user-activity — View user activity report
+8. Role Management
+POST /admin/roles — Add new admin or staff role
+DELETE /admin/roles/{roleId} — Remove an admin or staff role
+
+
+----------------------------------------------------
+
+[HttpPost]
+[Authorize]
+public async Task<IActionResult> CreateOrder([FromBody] OrderDTO orderDto)
+{
+    // Check if the customer exists
+    var customer = await _customerRepository.GetCustomerByIdAsync(orderDto.CustomerId);
+    if (customer == null)
+    {
+        return NotFound(new { message = "Customer not found." });
+    }
+
+    // Get the car associated with the customer
+    var car = await _carRepository.GetCarByCustomerIdAsync(orderDto.CustomerId);
+    if (car == null)
+    {
+        return NotFound(new { message = "Customer does not have a car registered." });
+    }
+
+    // Validate if the vehicle type of car matches the order's vehicle type
+    if (car.VehicleType != orderDto.VehicleType)
+    {
+        return BadRequest(new { message = "Vehicle type does not match the registered car." });
+    }
+
+    // Get the wash package and add-on details
+    var package = await _washPackageRepository.GetPackageByIdAsync(orderDto.PackageId);
+    AddOn addOn = null;
+
+    // If AddOnId is provided and not zero, fetch the add-on details
+    if (orderDto.AddOnId != 0)
+    {
+        addOn = await _addOnRepository.GetAddOnByIdAsync(orderDto.AddOnId);
+    }
+
+    if (package == null)
+    {
+        return BadRequest(new { message = "Package not found." });
+    }
+
+    // Calculate total price based on the package and add-ons
+    decimal totalPrice = package.Price;
+    if (addOn != null)
+    {
+        totalPrice += addOn.AddOnPrice;
+    }
+
+    // Assign WasherId automatically based on vehicle type matching
+    var washer = await _washerRepository.GetAvailableWasherByVehicleTypeAsync(orderDto.VehicleType); 
+    if (washer == null)
+    {
+        return BadRequest(new { message = "No available washer for this vehicle type." });
+    }
+
+    // If location is not provided, use the customer's address or the washer's address
+    string location = orderDto.Location;
+
+    // Fallback to customer address if no location is provided
+    if (string.IsNullOrEmpty(location) && !string.IsNullOrEmpty(customer.Address))
+    {
+        location = customer.Address;
+    }
+
+    // If no location is provided by customer, fallback to washer's address
+    if (string.IsNullOrEmpty(location) && !string.IsNullOrEmpty(washer.Address))
+    {
+        location = washer.Address;
+    }
+
+    // If location is still missing, return a message asking for the location
+    if (string.IsNullOrEmpty(location))
+    {
+        return BadRequest(new { message = "Location is required. Please provide a valid address." });
+    }
+
+    var newOrder = new Order
+    {
+        CustomerId = orderDto.CustomerId,
+        WasherId = washer.WasherId,  // Assigned washer based on vehicle type
+        PackageId = orderDto.PackageId,
+        VehicleType = orderDto.VehicleType,
+        Status = "Pending",  // Default status is "Pending"
+        PaymentStatus = orderDto.PaymentStatus ?? "Pending",  // Default to Pending if not specified
+        OrderDate = DateTime.Now,
+        WashDate = orderDto.WashDate,
+        Location = location,  // Use the resolved location
+        AddOnId = orderDto.AddOnId == 0 ? 0 : orderDto.AddOnId,  // Set to 0 if no add-on selected
+        TotalPrice = totalPrice
+    };
+
+    // Check whether the wash is "Wash Now" or "Scheduled"
+    if (newOrder.WashDate <= DateTime.Now)
+    {
+        newOrder.Status = "InProgress";  // Immediate wash
+        newOrder.PaymentStatus = "Pending"; // Initially, payment is "Pending" for Wash Now
+
+        // Save the order and return a success message
+        await _orderRepository.CreateOrderAsync(newOrder);
+
+        return Ok(new { message = "Order placed successfully. Wash Now request placed.", order = newOrder });
+    }
+    else
+    {
+        newOrder.Status = "Scheduled";  // Scheduled wash
+
+        // Save the order and return a success message
+        await _orderRepository.CreateOrderAsync(newOrder);
+
+        return Ok(new { message = "Order placed successfully. Scheduled Wash request placed.", order = newOrder });
+    }
+}
+
+
+
+I want to database entry for each and every condition on above in swagger
+-------------------------------------------------------------------
+
+
+Operations by Role
+1. Customer Operations (User Role)
+A Customer (User) can be a regular user who either books a car wash service or performs additional operations. The Customer role may also include a Washer (if the user is a car washer as well).
+Key Operations a Customer Can Perform:
+Register / Sign Up
+Customers can register on the platform by providing their personal information (name, email, phone number, address, etc.).
+If a user wants to act as both a customer and a washer, they can specify their role during registration (e.g., IsWasher = true).
+Login / Authentication
+A customer can log into the system using their credentials (email/password).
+If the login is successful, the user receives a JWT token for authorization on subsequent requests.
+View and Manage Profile
+Customers can view and update their personal details like name, email, phone number, and address.
+Customers can update their IsWasher status if they wish to become a car washer.
+Add and Manage Cars
+Customers can add their vehicles (Car) to the platform by providing details like make, model, color, license plate, and images.
+They can update or remove vehicles from their profile.
+Place an Order
+A customer can place an order for a car wash service.
+The order will include the car being washed, the service/package selected, and the total amount.
+The status of the order can be "Pending", "In Progress", or "Completed".
+View Order History
+Customers can view their past orders, including the car being washed, the package chosen, the total amount, and the status of the service.
+Make Payment
+Once a car wash service is completed, the customer can make a payment for the service.
+The payment can be via different methods (e.g., cash, card, online payment).
+Rate and Review
+After the car wash is complete, customers can rate and review the service provided.
+Reviews include a rating (e.g., 1 to 5 stars) and comments about the experience.
+View Reviews
+Customers can view their reviews and feedback given to specific washers or services.
+Customer Operations Flow:
+Register → Login → View Profile → Add Cars → Place Order → Make Payment → Rate/Review Washer → View Order History.
+2. Washer Operations
+A Washer is a user who performs car wash services. A washer can be either an individual car washer (a part-time or full-time service provider) or an admin who performs the car washing tasks.
+Key Operations a Washer Can Perform:
+Login
+Washers can log in using their credentials (email/password). Washers are typically regular users marked with IsWasher = true.
+View Assigned Orders
+Washers can view a list of orders assigned to them (from the admin or system) based on the current active jobs.
+Orders will include the car to be washed, the package chosen, and the customer information.
+Accept/Start Washing Orders
+The washer can mark an order as "In Progress" when they start the washing process.
+This allows the customer to see the status of their order.
+Update Order Status
+Washers can update the order status from "In Progress" to "Completed" once the washing service is finished.
+Washers can also add completion notes (e.g., issues with the car, special requests).
+Rate and Review the Service
+Washers can provide feedback about the service (in case the car wash process is linked with a review of the customer's behavior or the type of car).
+View Order History
+Washers can view their past orders (completed jobs) and see the feedback and reviews left by the customers.
+Earn Payments (Track Earnings)
+Washers may be able to track their earnings based on completed orders.
+Respond to Reviews (Optional)
+Depending on the system, washers might be able to respond to customer reviews (e.g., addressing complaints or acknowledging compliments).
+Washer Operations Flow:
+Login → View Assigned Orders → Accept Order → Start Washing → Update Order Status to Complete → View Order History.
+3. Admin Operations
+An Admin is the super-user with all the permissions to manage the platform, users, orders, packages, payments, and reviews.
+Key Operations an Admin Can Perform:
+Login
+Admins can log in using their credentials (email/password).
+Admins are typically separate from regular customers and washers in terms of roles.
+Manage Users
+Admins can create new users, view all user profiles, update user details, and deactivate or delete users.
+Admins can manage user roles (e.g., change a user from a regular customer to a washer, or vice versa).
+Create and Manage Washers
+Admins can assign or update the role of a user to make them a washer.
+Admins can also view washers' profiles, track their performance, and manage their earnings.
+Manage Orders
+Admins can view all orders in the system, including both pending and completed orders.
+Admins can assign specific washers to orders or reassign orders to available washers.
+Admins can update the status of orders and monitor order progress.
+Manage Packages
+Admins can create, update, or remove different types of car wash packages.
+Each package would have a name, description, price, and active status.
+View Payments
+Admins can track payments made by customers, including the amount paid, payment methods, and payment status.
+Admins can manage refunds or payment disputes if necessary.
+View Reviews
+Admins can see all customer reviews for washers and services.
+Admins can respond to reviews, take corrective actions for bad reviews, and ensure quality control.
+Manage Packages and Pricing
+Admins can update the pricing and description of different packages offered for car washing services.
+Generate Reports
+Admins can generate reports related to user activity, order history, reviews, earnings, etc.
+Manage System Configuration (Optional)
+Admins may have access to system settings like changing JWT token expiration times, managing platform configurations, etc.
+Admin Operations Flow:
+Login → Manage Users (Create, Update, Deactivate) → Assign Washer Roles → Manage Orders (Assign/Track) → Manage Packages → View Payments → View and Respond to Reviews → Generate Reports.
+Summary of Role Operations
+Operation
+	
+Customer (User)
+	
+Washer
+	
+Admin
+
+
+Register
+	
+✔️
+	
+✔️
+	
+❌
+
+
+Login
+	
+✔️
+	
+✔️
+	
+✔️
+
+
+View Profile
+	
+✔️
+	
+✔️
+	
+✔️
+
+
+Update Profile
+	
+✔️
+	
+✔️
+	
+✔️
+
+
+Add/Remove Car
+	
+✔️
+	
+❌
+	
+✔️
+
+
+Place Order
+	
+✔️
+	
+❌
+	
+✔️
+
+
+View Order History
+	
+✔️
+	
+✔️
+	
+✔️
+
+
+Make Payment
+	
+✔️
+	
+❌
+	
+✔️
+
+
+Rate/Review Washer
+	
+✔️
+	
+✔️
+	
+✔️
+
+
+Manage Orders
+	
+❌
+	
+✔️
+	
+✔️
+
+
+Accept/Start Washing Orders
+	
+❌
+	
+✔️
+	
+❌
+
+
+Update Order Status
+	
+❌
+	
+✔️
+	
+✔️
+
+
+Manage Users
+	
+❌
+	
+❌
+	
+✔️
+
+
+Manage Packages
+	
+❌
+	
+❌
+	
+✔️
+
+
+Track Payments
+	
+❌
+	
+❌
+	
+✔️
+
+
+Generate Reports
+	
+❌
+	
+❌
+	
+✔️
+Conclusion
+Customers primarily interact with the platform for registering, ordering services, paying, and rating services.
+Washers can manage their orders, start washing services, update statuses, and track their performance (e.g., reviews).
+Admins have full control to manage users, track orders, assign washers, manage packages, view payments, track reviews, and generate reports.
+This breakdown should give you a clear understanding of t
+Suggested API Endpoints for Admin
+Here are some possible endpoints an admin might use in the system:
+1. User Management
+GET /admin/users — View all users
+POST /admin/users/{userId}/deactivate — Deactivate a user
+POST /admin/users/{userId}/delete — Delete a user
+2. Car Management
+GET /admin/cars — View all cars
+POST /admin/cars/{carId}/approve — Approve a car for service
+POST /admin/cars/{carId}/delete — Delete a car
+3. Order Management
+GET /admin/orders — View all orders
+POST /admin/orders/{orderId}/approve — Approve an order
+POST /admin/orders/{orderId}/cancel — Cancel an order
+PUT /admin/orders/{orderId}/status — Update order status
+4. Payment Management
+GET /admin/payments — View all payment transactions
+POST /admin/payments/{paymentId}/refund — Issue a refund
+5. Service Package Management
+GET /admin/packages — View all service packages
+POST /admin/packages — Create a new service package
+PUT /admin/packages/{packageId} — Update an existing package
+DELETE /admin/packages/{packageId} — Delete a service package
+6. Review Management
+GET /admin/reviews — View all reviews
+POST /admin/reviews/{reviewId}/approve — Approve a review
+POST /admin/reviews/{reviewId}/delete — Delete a review
+7. Reporting & Analytics
+GET /admin/reports/revenue — View revenue report
+GET /admin/reports/services-usage — View service usage report
+GET /admin/reports/user-activity — View user activity report
+8. Role Management
+POST /admin/roles — Add new admin or staff role
+DELETE /admin/roles/{roleId} — Remove an admin or staff role
+ChatGPT said:
+ChatGPT
+To implement the operations by role for Customer, Washer, and Admin, let's break down the API endpoints for each role and define the possible HTTP operations for each. Based on your request, I will outline how these operations can be implemented in a web application with API endpoints.
+
+1. Customer Operations (User Role)
+Customer operations mostly involve user management, car management, order management, and interacting with the service. Below are the relevant endpoints:
+
+Customer Operations API Endpoints
+Operation	Endpoint	HTTP Method	Description
+Register	/api/customers/register	POST	Register a new customer with personal details.
+Login	/api/customers/login	POST	Authenticate a customer and return JWT token.
+View Profile	/api/customers/{customerId}/profile	GET	Get the customer's profile.
+Update Profile	/api/customers/{customerId}/profile	PUT	Update the customer's profile (name, email, etc.).
+Add a Car	/api/customers/{customerId}/cars	POST	Add a new car to the customer's profile.
+Update Car Details	/api/customers/{customerId}/cars/{carId}	PUT	Update the details of an existing car.
+Delete Car	/api/customers/{customerId}/cars/{carId}	DELETE	Delete a car from the customer's profile.
+Place Order	/api/customers/{customerId}/orders	POST	Place a new car wash order.
+View Order History	/api/customers/{customerId}/orders	GET	View past orders placed by the customer.
+Make Payment	/api/customers/{customerId}/orders/{orderId}/payment	POST	Make a payment for a completed car wash service.
+Rate/Review Washer	/api/customers/{customerId}/reviews	POST	Rate or review a washer.
+View Reviews	/api/customers/{customerId}/reviews	GET	View customer reviews and feedback.
+2. Washer Operations
+A Washer is a user who performs the car wash services. They need to manage their orders, update the status of their tasks, and potentially track their performance.
+
+Washer Operations API Endpoints
+Operation	Endpoint	HTTP Method	Description
+Login	/api/washers/login	POST	Authenticate a washer and return JWT token.
+View Assigned Orders	/api/washers/{washerId}/orders	GET	View orders assigned to a specific washer.
+Accept/Start Washing	/api/washers/{washerId}/orders/{orderId}/start	PUT	Mark an order as "In Progress".
+Update Order Status	/api/washers/{washerId}/orders/{orderId}/status	PUT	Update order status (e.g., "Completed").
+Rate/Review the Service	/api/washers/{washerId}/reviews	POST	Leave feedback on the customer or service.
+View Order History	/api/washers/{washerId}/orders	GET	View completed orders and related feedback.
+Track Earnings	/api/washers/{washerId}/earnings	GET	Track the washer's earnings based on completed orders.
+3. Admin Operations
+The Admin has full control over the platform, managing users, orders, washers, service packages, payments, and generating reports.
+
+Admin Operations API Endpoints
+Operation	Endpoint	HTTP Method	Description
+Login	/api/admins/login	POST	Authenticate an admin and return JWT token.
+Manage Users	/api/admin/users	GET	View all users (customers and washers).
+Deactivate User	/api/admin/users/{userId}/deactivate	POST	Deactivate a user account (customer or washer).
+Delete User	/api/admin/users/{userId}/delete	DELETE	Delete a user account (customer or washer).
+Create/Manage Washers	/api/admin/washers	POST/PUT	Create or update a washer's role.
+View Washers	/api/admin/washers	GET	View the list of all washers.
+Manage Orders	/api/admin/orders	GET	View and manage all orders.
+Assign Washer to Order	/api/admin/orders/{orderId}/assign/{washerId}	PUT	Assign a specific washer to an order.
+Update Order Status	/api/admin/orders/{orderId}/status	PUT	Update the status of a specific order (e.g., "In Progress", "Completed").
+Manage Packages	/api/admin/packages	GET/POST/PUT/DELETE	Create, update, delete, or view service packages.
+View Payments	/api/admin/payments	GET	View all payment transactions made by customers.
+Manage Payments	/api/admin/payments/{paymentId}/refund	POST	Refund a payment transaction if necessary.
+View and Respond to Reviews	/api/admin/reviews	GET	View all reviews given by customers, and manage responses to reviews.
+Generate Reports	/api/admin/reports/{reportType}	GET	Generate different reports (e.g., revenue, service usage, user activity).
+Manage System Configurations	/api/admin/settings	PUT	Adjust system-wide configurations (e.g., token expiration time).
+Suggested API Flow
+Let's consider an example flow where a Customer places an order for a car wash, and the Washer performs the wash and updates the status.
+
+Customer Flow:
+Register: Customer registers on the platform.
+POST /api/customers/register
+Login: Customer logs in to the system.
+POST /api/customers/login
+Add Car: Customer adds their car.
+POST /api/customers/{customerId}/cars
+Place Order: Customer places an order for a car wash.
+POST /api/customers/{customerId}/orders
+Make Payment: After the service is completed, the customer makes the payment.
+POST /api/customers/{customerId}/orders/{orderId}/payment
+Rate Washer: Customer rates the washer's service.
+POST /api/customers/{customerId}/reviews
+Washer Flow:
+Login: Washer logs in to the system.
+POST /api/washers/login
+View Assigned Orders: Washer views the orders assigned to them.
+GET /api/washers/{washerId}/orders
+Start Washing: Washer starts washing the car.
+PUT /api/washers/{washerId}/orders/{orderId}/start
+Update Order Status: Washer marks the order as completed.
+PUT /api/washers/{washerId}/orders/{orderId}/status
+Rate Customer: Washer rates the customer or service.
+POST /api/washers/{washerId}/reviews
+Admin Flow:
+Login: Admin logs in to the system.
+POST /api/admins/login
+Manage Users: Admin views and manages all users.
+GET /api/admin/users
+Manage Orders: Admin assigns washers to orders.
+PUT /api/admin/orders/{orderId}/assign/{washerId}
+Manage Packages: Admin creates, updates, or deletes service packages.
+POST /api/admin/packages
+Generate Reports: Admin generates reports for revenue, usage, etc.
+GET /api/admin/reports/revenue
+Conclusion
+By organizing your API into customer, washer, and admin roles with clearly defined operations, you can create a robust platform for car wash services that handles user management, orders, payments, and feedback efficiently. Each role has its own set of permissions and endpoints to ensure the smooth running of the platform.
+
+Let me know if you need further assistance on specific implementation details!
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        
