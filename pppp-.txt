@@ -1,0 +1,205 @@
+WE HOPE TO SEE IMPROVEMENT IN YOUR PERFORMANCE FROM NOW PLEASE....
+
+
+
+dotnet-ef dbcontext scaffold "Data Source=LIN-5CG2217ML6;Initial Catalog=railwaysystem; User Id=sa; Password=Sqlserver2024; TrustServerCertificate=True;" Microsoft.EntityFrameworkCore.SqlServer -o Models
+
+<p>Learn about <a href="https://learn.microsoft.com/aspnet/core">building Web apps with ASP.NET Core</a>.</p>
+
+
+
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore; // Required for EF Core extensions
+using YourNamespace.Models; // Adjust the namespace for your models
+using YourNamespace.ViewModels; // Adjust the namespace for your view models
+using System.Linq; // For LINQ queries
+using System.Threading.Tasks; // Required for async/await
+
+public class PassengerController : Controller
+{
+    private readonly ApplicationDbContext _context;
+
+    public PassengerController(ApplicationDbContext context)
+    {
+        _context = context;
+    }
+
+    // GET: Passenger/Login
+    [HttpGet]
+    public IActionResult Login()
+    {
+        return View();
+    }
+
+    
+
+    // GET: Passenger/Index
+    public async Task<IActionResult> Index()
+    {
+        // Optionally check if the user is logged in before displaying passenger details
+        var userEmail = HttpContext.Session.GetString("User  Email");
+        if (userEmail == null)
+        {
+            return RedirectToAction("Login"); // Redirect to login if not logged in
+        }
+
+        // Fetch passenger details from the database asynchronously
+        return View(await _context.PassengerDetails.ToListAsync());
+    }
+}
+
+
+
+
+
+
+using Microsoft.EntityFrameworkCore;
+using Railway.Models;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Add services to the container.
+builder.Services.AddControllersWithViews();
+builder.Services.AddDbContext<RailwaysystemContext>(
+    options => options.UseSqlServer(builder.Configuration.GetConnectionString("Default"))
+);
+var app = builder.Build();
+
+// Configure the HTTP request pipeline.
+if (!app.Environment.IsDevelopment())
+{
+    app.UseExceptionHandler("/Home/Error");
+    // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
+    app.UseHsts();
+}
+
+app.UseHttpsRedirection();
+app.UseStaticFiles();
+
+app.UseRouting();
+
+app.UseAuthorization();
+
+app.MapControllerRoute(
+    name: "default",
+    pattern: "{controller=Home}/{action=Index}/{id?}");
+
+app.Run();
+
+
+
+ <li class="nav-item">
+                            <a class="nav-link text-dark" asp-area="" asp-controller="Passenger" asp-action="Index">Passenger</a>
+                        </li>
+
+
+
+
+
+// POST: Passenger/Login
+        [HttpPost]
+        public async Task<IActionResult> Login(PassengerDetail model)
+        {
+            if (ModelState.IsValid)
+            {
+                var passenger = await _context.PassengerDetails
+                    .FirstOrDefaultAsync(p => p.Email == model.Email && p.LoginPassword == model.LoginPassword);
+
+                if (passenger != null)
+                {
+                    // Logic for successful login (e.g., set session, redirect)
+                    HttpContext.Session.SetString("User Email", passenger.Email);
+                    HttpContext.Session.SetInt32("User Id", passenger.Pid);
+
+                    return RedirectToAction("Details", new { id = passenger.Pid }); // Redirect to passenger details page
+                }
+                ModelState.AddModelError(string.Empty, "Invalid login attempt.");
+            }
+            return View(model);
+        }
+
+        // GET: Passenger/Details/5
+        public async Task<IActionResult> Details(int? id)
+        {
+            if (id == null)
+            {
+                return NotFound();
+            }
+
+            var passengerDetail = await _context.PassengerDetails
+                .FirstOrDefaultAsync(m => m.Pid == id);
+            if (passengerDetail == null)
+            {
+                return NotFound();
+            }
+
+            return View(passengerDetail);
+        }
+
+
+
+
+
+
+// GET: Passenger/Details/5
+        public async Task<IActionResult> Details(int? id)
+        {
+            if (id == null)
+            {
+                return NotFound();
+            }
+
+            var passengerDetail = await _context.PassengerDetails
+                .FirstOrDefaultAsync(m => m.Pid == id);
+            if (passengerDetail == null)
+            {
+                return NotFound();
+            }
+
+            return View(passengerDetail);
+        }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,181 @@
+Fundamentals of  
+ASP.NET
+MVC
+o
+ASP.NET
+MVC Framework
+o
+ASP.NET
+vs.
+ASP.NET
+MVC
+o
+ASP.NET
+MVC Model
+• Exploring Controllers
+o Working with Controllers
+o Routing
+o Attribute Routing
+o Action Methods
+o Action Filters ,Types of Action Filters
+o Passing Data from controller to view
+• Working with Views
+o
+ASP.NET
+MVC Razor View Engines
+o HTML Helpers
+o Working with Layout
+• Exploring Models & working with data
+o Model Binding
+o Data Annotation
+• Entity Framework 6 Features with Asp. Net Scaffolding
+o Code First Model
+o Multiple Migrations
+o Scaffolding
+• Web Optimization with
+ASP.NET
+MVC
+o Web Optimization
+o Bundling & Minification
+o Configuring bundles
+• Using
+ASP.NET
+Identity in
+ASP.NET
+MVC
+o What is
+ASP.NET
+Identity?
+o Features of
+ASP.NET
+Identity
+o Claim Based Authentication
+o External Authentication
+
+
+ASP.NET
+Web API
+
+Program Duration
+: 3 Days.
+
+Table of contents
+• Introduction to
+ASP.NET
+Web API
+o Web API features
+o SOAP- based WebServices
+o HTTP Web Services
+o Web API Introduction
+o Web API Routing
+o Web API Parameter Biding
+o Content Negotiation
+o Working with swagger and Postman Utility    
+ please give me IT industry recently questions for all those topic from beginner to developer with answers without jargons
+
+ASP.NET MVC
+1. ASP.NET MVC Framework
+Q: What are the main components of the ASP.NET MVC framework and how do they interact?
+A: The main components are Model, View, and Controller. 
+The Model represents the data and business logic, the View displays the data, and the Controller handles user input and updates the Model and View accordingly1.
+
+2. ASP.NET vs. ASP.NET MVC
+Q: How does ASP.NET MVC differ from traditional ASP.NET Web Forms?
+A: ASP.NET MVC uses the Model-View-Controller pattern, which provides better separation of concerns, testability, and control over HTML.
+ Web Forms use a more event-driven approach with less control over HTML and more reliance on server controls1.
+
+3. Working with Controllers
+Q: What is the role of a Controller in ASP.NET MVC?
+A: A Controller handles user input, interacts with the Model, and selects a View to render the output1.
+
+4. Routing
+Q: What is routing in ASP.NET MVC?
+A: Routing is the process of mapping URLs to Controller actions. It allows for clean, SEO-friendly URLs1.
+
+5. Action Filters
+Q: What are Action Filters in ASP.NET MVC?
+A: Action Filters are attributes that can be applied to controllers or actions to perform logic before or after an action method executes. Examples include Authorize, HandleError, and OutputCache1.
+
+6. Passing Data from Controller to View
+Q: How can you pass data from a Controller to a View in ASP.NET MVC?
+A: Data can be passed using ViewBag, ViewData, or strongly-typed models1.
+
+Working with Views
+1. Razor View Engine
+Q: What is the Razor View Engine?
+A: Razor is a markup syntax that allows you to embed server-based code into web pages using C# or VB.NET. It is designed for creating dynamic web pages with a clean and concise syntax1.
+
+2. HTML Helpers
+Q: What are HTML Helpers in ASP.NET MVC?
+A: HTML Helpers are methods that generate HTML markup. Examples include Html.TextBoxFor, Html.DropDownListFor, and Html.ActionLink1.
+
+Exploring Models & Working with Data
+1. Model Binding
+Q: What is Model Binding in ASP.NET MVC?
+A: Model Binding is the process of creating .NET objects using the data sent by the browser in an HTTP request1.
+
+2. Data Annotation
+Q: What are Data Annotations in ASP.NET MVC?
+A: Data Annotations are attributes that provide metadata for model properties, such as validation rules and display formats1.
+
+Entity Framework 6 Features with ASP.NET Scaffolding
+1. Code First Model
+Q: What is Code First in Entity Framework?
+A: Code First allows you to define your model using C# or VB.NET classes. The database schema is then created based on these classes1.
+
+2. Multiple Migrations
+Q: How do you handle multiple migrations in Entity Framework?
+A: Migrations allow you to incrementally update your database schema to keep it in sync with your model. You can add, update, or remove migrations as your model changes1.
+
+Web Optimization with ASP.NET MVC
+1. Bundling & Minification
+Q: What is bundling and minification in ASP.NET MVC?
+A: Bundling combines multiple files into a single file to reduce the number of HTTP requests. Minification removes unnecessary characters from code to reduce file size1.
+
+Using ASP.NET Identity in ASP.NET MVC
+1. ASP.NET Identity
+Q: What is ASP.NET Identity?
+A: ASP.NET Identity is a membership system that adds login functionality to your application. It supports features like two-factor authentication, account lockout, and external logins1.
+
+ASP.NET Web API
+1. Web API Features
+Q: What are the key features of ASP.NET Web API?
+A: ASP.NET Web API is a framework for building HTTP services that can be consumed by a broad range of clients, including browsers and mobile devices. It supports RESTful services and can return data in JSON or XML format2.
+
+2. Web API Routing
+Q: How does routing work in ASP.NET Web API?
+A: Web API uses attribute routing to define routes directly on controller actions. This allows for more control over the URIs and the parameters2.
+
+3. Content Negotiation
+Q: What is content negotiation in Web API?
+A: Content negotiation is the process of selecting the best representation for a given response when there are multiple representations available. It is based on the client’s request headers2.
+
+I hope these questions and answers help you prepare effectively! If you need more details on any specific topic, feel free to ask.
+
+Learn more
+
+1
+
+interviewprep.org
+2
+
+dotnettricks.com
+3
+
+fullstack.cafe
+4
+
+almabetter.com
+5
+
+simplilearn.com
+6
+
+techgeekbuzz.com
+7
+
+interviewprep.org
+8
+
+devinterview.io
+9

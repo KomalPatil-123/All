@@ -1,0 +1,64 @@
+dotnet new mvc
+dotnet run
+dotnet add package Microsoft.EntityFrameworkCore 
+dotnet add package Microsoft.EntityFrameworkCore.SqlServer
+dotnet add package Microsoft.EntityFrameworkCore.Tools
+dotnet add package Microsoft.VisualStudio.Web.CodeGeneration.Design
+dotnet tool install --global dotnet-aspnet-codegenerator
+dotnet-ef dbcontext scaffold "Data Source=LIN-5CG134BVB1;Initial Catalog=railwaysystem; Integrated Security=True; TrustServerCertificate=True" Microsoft.EntityFrameworkCore.SqlServer -o Models
+OR
+dotnet-ef dbcontext scaffold "Data Source=LIN-5CG134BVB1;Initial Catalog=railwaysystem; Integrated Security=True; TrustServerCertificate=True" Microsoft.EntityFrameworkCore.SqlServer -o Models -f
+dotnet build
+now in RailwaysystemContext.cs comment out the #warning statement part
+and write like this-
+    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+    {
+        if(!optionsBuilder.IsConfigured){}
+    }
+
+then in Program.cs write
+builder.Services.AddDbContext<RailwaysystemContext>(
+    options => options.UseSqlServer(builder.Configuration.GetConnectionString("Default"))
+ );
+then in appsettings.json
+"AllowedHosts": "*",
+  "ConnectionStrings": {
+    "Default": "Data Source=LIN-5CG134BVB1;Initial Catalog=railwaysystem; Integrated Security=True; TrustServerCertificate=True;"
+  }
+After that in terminal=
+
+dotnet aspnet-codegenerator controller -name TrainController -m TrainDetail -dc RailwaysystemContext --relativeFolderPath Controllers --useDefaultLayout --referenceScriptLibraries
+dotnet aspnet-codegenerator controller -name PassengerController -m PassengerDetail -dc RailwaysystemContext --relativeFolderPath Controllers --useDefaultLayout --referenceScriptLibraries
+dotnet aspnet-codegenerator controller -name TicketController -m TicketDetail -dc RailwaysystemContext --relativeFolderPath Controllers --useDefaultLayout --referenceScriptLibraries
+dotnet run
+
+CREATE TABLE Passengers (
+    Pid INT PRIMARY KEY IDENTITY,
+    PassengerName VARCHAR(50),
+    Gender VARCHAR(10),
+    Age INT,
+    Address VARCHAR(100),
+    CreditCardNo VARCHAR(20),
+    BankName VARCHAR(50),
+    Password VARCHAR(255) -- Storing hashed password
+);
+ 
+ 
+CREATE TABLE Trains (
+    PNR INT PRIMARY KEY,
+    TrainName VARCHAR(50),
+    Source VARCHAR(60),
+    Destination VARCHAR(60),
+    Departure DATETIME,
+    Arrival DATETIME,
+    AvailableSeats INT,
+    Fare DECIMAL(10, 2)
+);
+ 
+CREATE TABLE Tickets (
+    TicketId INT PRIMARY KEY IDENTITY,
+    PNR INT FOREIGN KEY REFERENCES Trains(PNR),
+    Pid INT FOREIGN KEY REFERENCES Passengers(Pid),
+    BookingDate DATETIME,
+    Fare DECIMAL(10, 2)
+);
