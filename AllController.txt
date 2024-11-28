@@ -1,0 +1,2714 @@
+*** AddOnController ***
+
+using CarWashAPI.Models;
+using CarWashAPI.DTO;
+using CarWashAPI.Repositories;
+using Microsoft.AspNetCore.Mvc;
+using AutoMapper;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+
+
+namespace CarWashAPI.Controllers
+{
+    [Route("api/[controller]")]
+    [ApiController]
+    public class AddOnController : ControllerBase
+    {
+        private readonly IAddOnRepository _repository;
+        private readonly IMapper _mapper;
+
+        public AddOnController(IAddOnRepository repository, IMapper mapper)
+        {
+            _repository = repository;
+            _mapper = mapper;
+        }
+
+        [HttpPost]
+        public async Task<ActionResult<AddOnDTO>> AddAddOn(AddOnDTO addOnDto)
+        {
+            if (addOnDto == null)
+            {
+                return BadRequest(new { message = "Add-on data is required." });
+            }
+
+            try
+            {
+                var addOn = _mapper.Map<AddOn>(addOnDto); // Map DTO to Model
+                var newAddOn = await _repository.AddAddOnAsync(addOn); // Call repository to save
+
+                // Map back the AddOn model to DTO for response
+                var newAddOnDto = _mapper.Map<AddOnDTO>(newAddOn);
+
+                return CreatedAtAction(nameof(GetAddOnById), new { id = newAddOn.AddOnId }, new 
+                { 
+                    message = "Add-on created successfully.", 
+                    data =  new 
+                    {
+                        AddOnId = newAddOn.AddOnId,
+                        AddOnName = newAddOn.AddOnName,
+                        AddOnPrice = newAddOn.AddOnPrice,
+                        Description = newAddOn.Description
+                    } 
+                });
+            }
+            catch (System.Exception ex)
+            {
+                return StatusCode(500, new { message = $"An error occurred while creating the add-on: {ex.Message}" });
+            }
+        }
+
+
+       
+        [HttpGet]
+        public async Task<ActionResult<IEnumerable<AddOnDTO>>> GetAllAddOns()
+        {
+            // Fetch all AddOns from the repository (using the model)
+            var addOns = await _repository.GetAllAddOnsAsync();
+            
+            if (addOns == null || addOns.Count == 0)
+            {
+                return NotFound(new { message = "No add-ons found." });
+            }
+
+            // Map from AddOn (Model) to AddOnDTO (DTO) using AutoMapper
+            var addOnDtos = _mapper.Map<IEnumerable<AddOnDTO>>(addOns);
+
+            // Dynamically include AddOnId in the response (even though AddOnDTO doesn't have it)
+            var result = addOns.Select(addOn => new
+            {
+                addOn.AddOnId,  // Include AddOnId dynamically in the response
+                addOn.AddOnName,
+                addOn.AddOnPrice,
+                addOn.Description
+            });
+
+            // Return response with the AddOnId included, even though it's not part of AddOnDTO
+            return Ok(new { message = "Add-ons retrieved successfully.", data = result });
+        }
+
+
+
+        // GET: api/AddOn/{id}
+        [HttpGet("{id}")]
+        public async Task<ActionResult<AddOnDTO>> GetAddOnById(int id)
+        {
+            var addOn = await _repository.GetAddOnByIdAsync(id);
+            if (addOn == null)
+            {
+                return NotFound(new { message = $"Add-on with ID {id} not found." });
+            }
+
+            // Return success response with addOnId included in the data
+            return Ok(new
+            {
+                message = "Add-on retrieved successfully.",
+                data = new
+                {
+                    addOnId = addOn.AddOnId,  // Include the AddOnId
+                    addOnName = addOn.AddOnName,
+                    addOnPrice = addOn.AddOnPrice,
+                    description = addOn.Description
+                }
+            });
+        }
+
+
+        [HttpPut("{id}")]
+        public async Task<IActionResult> UpdateAddOn(int id, [FromBody] AddOnDTO addOnDTO)
+        {
+            // Check if the add-on exists
+            var addOn = await _repository.GetAddOnByIdAsync(id);
+            if (addOn == null)
+            {
+                return NotFound(new { message = "AddOn not found." });
+            }
+
+            // Map DTO to the AddOn model
+            _mapper.Map(addOnDTO, addOn);
+
+            // Update only the relevant fields of AddOn
+            addOn.AddOnName = addOnDTO.AddOnName;
+            addOn.AddOnPrice = addOnDTO.AddOnPrice;
+            addOn.Description = addOnDTO.Description;
+
+            // Save the updated AddOn to the database
+            await _repository.UpdateAddOnAsync(addOn);
+            
+            return Ok(new { message = "AddOn updated successfully.", data = addOn });
+        }
+
+
+        // DELETE: api/AddOn/{id}
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> DeleteAddOn(int id)
+        {
+            try
+            {
+                var result = await _repository.DeleteAddOnAsync(id);
+                if (!result)
+                {
+                    return NotFound(new { message = $"Add-on with ID {id} not found for deletion." });
+                }
+
+                return Ok(new { message = "Add-on deleted successfully."}); // Successfully deleted, no content to return
+            }
+            catch (System.Exception ex)
+            {
+                return StatusCode(500, new { message = $"An error occurred while deleting the add-on: {ex.Message}" });
+            }
+        }
+
+    
+    }
+}
+
+-----------------------------------------------------------------------------------------------
+
+*** AdminController ***
+
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Configuration;
+using CarWashAPI.DTO;
+using CarWashAPI.Repositories;
+using System;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Text;
+using Microsoft.IdentityModel.Tokens;
+using CarWashAPI.Models;
+using Microsoft.AspNetCore.Authorization;
+
+namespace CarWashAPI.Controllers
+{
+    [Route("api/[controller]")]
+    [ApiController]
+    public class AdminController : ControllerBase
+    {
+        private readonly IAdminRepository _adminRepository;
+        private readonly IConfiguration _configuration;
+        private readonly IWasherRepository _washerRepository;
+        private readonly IWashPackageRepository _washPackageRepository;
+        private readonly IPaymentRepository _paymentRepository;
+        private readonly IOrderRepository _orderRepository;
+        private readonly ICustomerRepository _customerRepository;
+         private readonly IReviewRepository _reviewRepository;
+
+        // Constructor to inject the AdminRepository and IConfiguration
+        public AdminController(
+            IAdminRepository adminRepository, 
+            IConfiguration configuration, 
+            IWasherRepository washerRepository, 
+            IWashPackageRepository washPackageRepository,
+            IOrderRepository orderRepository,
+            ICustomerRepository customerRepository,
+            IPaymentRepository paymentRepository,
+            IReviewRepository reviewRepository)
+        {
+            _adminRepository = adminRepository;
+            _configuration = configuration;
+            _washerRepository = washerRepository;
+            _washPackageRepository = washPackageRepository;
+            _orderRepository = orderRepository;
+            _customerRepository = customerRepository;
+            _paymentRepository = paymentRepository;
+            _reviewRepository = reviewRepository;
+        }
+
+        // Register admin endpoint
+        [HttpPost("register")]
+        public IActionResult Register([FromBody] AdminDTO adminDTO)
+        {
+            var registeredAdmin = _adminRepository.Register(adminDTO);
+            if (registeredAdmin == null)
+            {
+                // Email already exists
+                return BadRequest(new { message = "Email is already in use. Please choose a different email." });
+            }
+
+            // Return success response with admin details
+            return Ok(new { message = "Admin registered successfully." });
+        }
+
+        // Admin login endpoint
+        [HttpPost("login")]
+        public IActionResult Login([FromBody] AdminDTO adminDTO)
+        {
+            var authenticatedAdmin = _adminRepository.Authenticate(adminDTO.Email, adminDTO.Password);
+            if (authenticatedAdmin == null)
+            {
+                // Invalid credentials
+                return Unauthorized(new { message = "Invalid credentials. Please check your email and password." });
+            }
+
+            // Generate JWT token for the authenticated admin
+            var token = GenerateJwtToken(authenticatedAdmin);  // Use the authenticated admin object
+            return Ok(new { message = "Login successful.", Token = token });
+        }
+
+        // Method to generate JWT token for an authenticated admin
+        private string GenerateJwtToken(Admin admin)
+        {
+            // Retrieve secret key, issuer, and audience from configuration (updated for AppSettings)
+            var secretKey = _configuration["AppSettings:Secret"];
+            var issuer = _configuration["AppSettings:Issuer"];
+            var audience = "Admin";
+
+            // Check if the secret key is missing or empty
+            if (string.IsNullOrEmpty(secretKey))
+            {
+                throw new ArgumentNullException("AppSettings:Secret", "JWT Secret Key is missing in configuration.");
+            }
+
+            // Define claims for the token
+            var claims = new[]
+            {
+                new Claim(ClaimTypes.NameIdentifier, admin.AdminId.ToString()),
+                new Claim(ClaimTypes.Email, admin.Email),
+                new Claim(ClaimTypes.Role, "Admin")  // Add the role claim
+            };
+
+            // Create the signing credentials
+            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey));
+            var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+
+            // Create the JWT token
+            var token = new JwtSecurityToken(
+                issuer: issuer,
+                audience: audience,
+                claims: claims,
+                expires: DateTime.Now.AddHours(1),
+                signingCredentials: creds
+            );
+
+            // Return the token as a string
+            return new JwtSecurityTokenHandler().WriteToken(token);
+        }
+
+        // PUT: api/admin/orders/{orderId}/assign/{washerId}
+        [Authorize(Roles = "Admin")]
+        [HttpPut("orders/{orderId}/assign/{washerId}")]
+        public async Task<IActionResult> AssignWasherToOrder(int orderId, int washerId)
+        {
+            // Retrieve the order using orderId
+            var order = await _orderRepository.GetOrderByIdAsync(orderId);
+            if (order == null)
+            {
+                return NotFound(new { message = "Order not found." });
+            }
+
+            // Retrieve the washer using washerId
+            var washer = await _washerRepository.GetWasherByIdAsync(washerId);
+            if (washer == null)
+            {
+                return NotFound(new { message = "Washer not found." });
+            }
+
+            // Check if the washer is active before assigning
+            if (washer.WasherStatus != "Active")
+            {
+                return BadRequest(new { message = "Washer is not active and cannot be assigned to this order." });
+            }
+
+            // Check if the washer can handle the vehicle type of the order
+            if (washer.Vehicle != order.VehicleType)
+            {
+                return BadRequest(new { message = "Washer cannot be assigned to this order due to vehicle type mismatch." });
+            }
+
+            // Assign the washer to the order
+            order.WasherId = washerId;
+
+            // Update the order in the repository
+            await _orderRepository.UpdateOrderAsync(order);
+
+            // Return success message
+            return Ok(new { message = "Washer successfully assigned to the order.", order });
+        }
+
+        // // POST: api/Washer/AddWasher
+        // [Authorize(Roles = "Admin")]
+        // [HttpPost("AddWasher")]  // Ensure only admins can access this endpoint
+        // public async Task<IActionResult> AddWasher([FromBody] WasherDTO washerDto)
+        // {
+        //     if (washerDto == null)
+        //     {
+        //         return BadRequest("Washer data is required.");
+        //     }
+
+        //     // Get AdminId from JWT (assuming AdminId is stored as a claim)
+        //     var adminIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);  // AdminId from JWT claim
+        //     if (adminIdClaim == null)
+        //     {
+        //         return Unauthorized("AdminId is missing from token.");
+        //     }
+
+        //     var adminId = int.Parse(adminIdClaim.Value);  // Convert claim to int
+
+        //     // Hash the password (using BCrypt in this case)
+        //     var hashedPassword = BCrypt.Net.BCrypt.HashPassword(washerDto.Password);
+
+        //     // Create the Washer object to be added to the repository
+        //     var washer = new Washer
+        //     {
+        //         Name = washerDto.Name,
+        //         Email = washerDto.Email,
+        //         PhoneNumber = washerDto.PhoneNumber,
+        //         Address = washerDto.Address,
+        //         Password = hashedPassword,
+        //         Vehicle = washerDto.Vehicle,
+        //         WasherStatus = washerDto.WasherStatus,
+        //         AdminId = adminId // Associate the washer with the Admin
+        //     };
+
+        //     // Call the repository to add the washer
+        //     var success = await _washerRepository.AddWasherAsync(washer);
+
+        //     if (success)
+        //     {
+        //         return Ok(new { message = "Washer added successfully" });
+        //     }
+
+        //     return StatusCode(500, "Internal server error while adding the washer.");
+        // }
+
+        [Authorize(Roles = "Admin")]
+        [HttpGet("washers")]
+        public async Task<IActionResult> GetAllWashers()
+        {
+            // Fetch all washers asynchronously
+            var washers = await _washerRepository.GetAllWashersAsync();
+
+            // Check if there are no washers
+            if (washers == null || !washers.Any())
+            {
+                return NotFound(new { message = "No washers found." });
+            }
+
+            // Return the list of washers
+            return Ok(washers);
+        }
+
+        // [Authorize(Roles = "Admin")]
+        // [HttpGet("washers/{washerId}")]
+        // public async Task<IActionResult> GetWasherById(int washerId)
+        // {
+        //     // Fetch the washer by ID
+        //     var washer = await _washerRepository.GetWasherByIdAsync(washerId);
+
+        //     if (washer == null)
+        //     {
+        //         return NotFound(new { message = $"Washer with ID {washerId} not found." });
+        //     }
+
+        //     return Ok(washer);  // Return the washer details if found
+        // }
+
+         
+        
+        // // PUT: api/admin/washers/{id}
+        // [Authorize(Roles = "Admin")]
+        // [HttpPut("washers/{washerId}")]
+        // public async Task<IActionResult> UpdateWasher(int washerId, [FromBody] Washer washer)
+        // {
+        //     // Check if the washer exists
+        //     var existingWasher = await _washerRepository.GetWasherByIdAsync(washerId);
+
+        //     if (existingWasher == null)
+        //     {
+        //         return NotFound(new { message = $"Washer with ID {washerId} not found." });
+        //     }
+
+        //     // Ensure that the incoming washer data has the same ID as the one to be updated
+        //     if (washer.WasherId != washerId)
+        //     {
+        //         return BadRequest(new { message = "Washer ID mismatch." });
+        //     }
+
+        //     // Update the washer details
+        //     existingWasher.Name = washer.Name ?? existingWasher.Name;
+        //     existingWasher.Email = washer.Email ?? existingWasher.Email;
+        //     existingWasher.PhoneNumber = washer.PhoneNumber ?? existingWasher.PhoneNumber;
+        //     existingWasher.Address = washer.Address ?? existingWasher.Address;
+        //     existingWasher.Password = washer.Password ?? existingWasher.Password; // Consider hashing the password before saving
+        //     existingWasher.Vehicle = washer.Vehicle ?? existingWasher.Vehicle;
+        //     existingWasher.WasherStatus = washer.WasherStatus ?? existingWasher.WasherStatus;
+
+        //     // Call the repository to update the washer
+        //     await _washerRepository.UpdateWasherAsync(existingWasher);
+
+        //     return Ok(new { message = "Washer details updated successfully.", washer = existingWasher });
+        // }
+
+        // // DELETE: api/admin/washers/{washerId}/delete
+        // [Authorize(Roles = "Admin")]
+        // [HttpDelete("washers/{washerId}/delete")]
+        // public async Task<IActionResult> DeleteWasher(int washerId)
+        // {
+        //     // Retrieve the washer using washerId
+        //     var washer = await _washerRepository.GetWasherByIdAsync(washerId);
+        //     if (washer == null)
+        //     {
+        //         return NotFound(new { message = "Washer not found." });
+        //     }
+
+        //     // Delete the washer account from the repository (delete the entity)
+        //     await _washerRepository.DeleteWasherAsync(washerId);
+
+        //     // Return success message
+        //     return Ok(new { message = "Washer account deleted successfully." });
+        // }
+
+        // GET: api/admin/customers
+        [Authorize(Roles = "Admin")]
+        [HttpGet("customers")]
+        public async Task<IActionResult> GetAllCustomers()
+        {
+            // Fetch all customers from the repository
+            var customers = await _customerRepository.GetAllCustomersAsync();
+            if (customers == null || customers.Count == 0)
+            {
+                return NotFound(new { message = "No customers found." });
+            }
+
+            // Return success message along with the customer list
+            return Ok(new 
+            {
+                message = "Customers retrieved successfully.",
+                customers = customers
+            });
+        }
+
+        // [Authorize(Roles = "Admin")]
+        // [HttpPost("packages")]
+        // public async Task<IActionResult> CreatePackage([FromBody] WashPackageDTO packageDto)
+        // {
+        //     if (packageDto == null)
+        //     {
+        //         return BadRequest(new { message = "Package data is required. Please provide the necessary information." });
+        //     }
+
+        //     // Create a new WashPackage from DTO
+        //     var package = new WashPackage
+        //     {
+        //         PackageName = packageDto.PackageName,
+        //         Price = packageDto.Price,
+        //         Description = packageDto.Description
+        //     };
+
+        //     // Add the package to the repository
+        //     var createdPackage = await _washPackageRepository.CreatePackageAsync(package);
+
+        //     return CreatedAtAction(nameof(GetPackageById), new { packageId = createdPackage.PackageId }, new 
+        //     { 
+        //         message = "Package created successfully.", 
+        //         package = createdPackage 
+        //     });
+        // }
+
+         // GET: api/admin/packages
+        [Authorize(Roles = "Admin")]
+        [HttpGet("packages")]
+        public async Task<IActionResult> GetAllPackages()
+        {
+            var packages = await _washPackageRepository.GetAllPackagesAsync();
+            if (packages == null || !packages.Any())
+            {
+                return NotFound(new { message = "No wash packages found." });
+            }
+            return Ok(new { message = "Fetched all wash packages successfully.", packages });
+        }
+
+        // // GET: api/admin/packages/{packageId}
+        // [Authorize(Roles = "Admin")]
+        // [HttpGet("packages/{packageId}")]
+        // public async Task<IActionResult> GetPackageById(int packageId)
+        // {
+        //     var package = await _washPackageRepository.GetPackageByIdAsync(packageId);
+        //     if (package == null)
+        //     {
+        //         return NotFound(new { message = $"No package found with ID {packageId}." });
+        //     }
+        //     return Ok(new { message = "Package fetched successfully.", package });
+        // }
+
+
+        // // PUT: api/admin/packages/{id}
+        // [Authorize(Roles = "Admin")]
+        // [HttpPut("packages/{packageId}")]
+        // public async Task<IActionResult> UpdatePackage(int packageId, [FromBody] WashPackageDTO packageDto)
+        // {
+        //     // Check if the provided package ID is valid
+        //     if (packageDto == null)
+        //     {
+        //         return BadRequest(new { message = "Package data is required." });
+        //     }
+
+        //     // Fetch the existing package from the repository
+        //     var existingPackage = await _washPackageRepository.GetPackageByIdAsync(packageId);
+            
+        //     if (existingPackage == null)
+        //     {
+        //         return NotFound(new { message = $"No package found with ID {packageId}." });
+        //     }
+
+        //     // Update the package fields with the incoming data, if available
+        //     existingPackage.PackageName = !string.IsNullOrWhiteSpace(packageDto.PackageName) ? packageDto.PackageName : existingPackage.PackageName;
+        //     existingPackage.Price = packageDto.Price > 0 ? packageDto.Price : existingPackage.Price;
+        //     existingPackage.Description = !string.IsNullOrWhiteSpace(packageDto.Description) ? packageDto.Description : existingPackage.Description;
+
+        //     // Call the repository to update the package in the database
+        //     await _washPackageRepository.UpdatePackageAsync(existingPackage);
+
+        //     // Return a success message with the updated package
+        //     return Ok(new { message = "Package updated successfully.", package = existingPackage });
+        // }
+
+
+        // // DELETE: api/admin/packages/{id}
+        // [Authorize(Roles = "Admin")]
+        // [HttpDelete("packages/{packageId}")]
+        // public async Task<IActionResult> DeletePackage(int packageId)
+        // {
+        //     var package = await _washPackageRepository.GetPackageByIdAsync(packageId);
+        //     if (package == null)
+        //     {
+        //         return NotFound(new { message = $"No package found with ID {packageId}." });
+        //     }
+
+        //     // Delete the package from the repository
+        //     await _washPackageRepository.DeletePackageAsync(packageId);
+            
+        //     return Ok(new { message = "Package deleted successfully." });
+        // }
+
+        // GET: api/admin/orders
+        [Authorize(Roles = "Admin")]
+        [HttpGet("orders")]
+        public async Task<IActionResult> GetAllOrders()
+        {
+            // Retrieve all orders from the order repository
+            var orders = await _orderRepository.GetAllOrdersAsync();
+
+            if (orders == null || !orders.Any())
+            {
+                return NotFound(new { message = "No orders found." });
+            }
+
+            // Return a list of orders with relevant details for admin
+            return Ok(new 
+            {
+                message = "All orders retrieved successfully.",
+                orders = orders.Select(order => new
+                {
+                    order.OrderId,
+                    order.CustomerId,
+                    order.WasherId,
+                    order.PackageId,
+                    order.VehicleType,
+                    order.Status,
+                    order.PaymentStatus,
+                    order.TotalPrice,
+                    order.OrderDate,
+                    order.WashDate,
+                    order.Location
+                })
+            });
+        }
+
+        // GET: api/orders/{orderId}
+        [Authorize(Roles = "Admin")]
+        [HttpGet("{orderId}")]
+        [Authorize]
+        public async Task<IActionResult> GetOrderDetails(int orderId)
+        {
+            var order = await _orderRepository.GetOrderByIdAsync(orderId);
+            if (order == null)
+            {
+                return NotFound(new { message = "Order not found." });
+            }
+
+            return Ok(new
+            {
+                order.OrderId,
+                order.CustomerId,
+                order.PackageId,
+                order.VehicleType,
+                order.Status,
+                order.PaymentStatus,
+                order.WashDate,
+                order.Location,
+                order.TotalPrice
+            });
+        }
+
+
+        // // GET: api/orders/{orderId}
+        // [Authorize(Roles = "Admin")]
+        // [HttpGet("{orderId}")]
+        // [Authorize]
+        // public async Task<IActionResult> GetOrderDetails(int orderId)
+        // {
+        //     var order = await _orderRepository.GetOrderByIdAsync(orderId);
+        //     if (order == null)
+        //     {
+        //         return NotFound(new { message = "Order not found." });
+        //     }
+
+        //     return Ok(new
+        //     {
+        //         order.OrderId,
+        //         order.CustomerId,
+        //         order.PackageId,
+        //         order.VehicleType,
+        //         order.Status,
+        //         order.PaymentStatus,
+        //         order.WashDate,
+        //         order.Location,
+        //         order.TotalPrice
+        //     });
+        // }
+
+
+
+        //  // PUT: api/admin/washers/{washerId}/orders/{orderId}/start
+        // [Authorize(Roles = "Admin")]
+        // [HttpPut("washers/{washerId}/orders/{orderId}/start")]
+        // public async Task<IActionResult> StartWashing(int washerId, int orderId)
+        // {
+        //     // Retrieve the order using orderId
+        //     var order = await _orderRepository.GetOrderByIdAsync(orderId);
+        //     if (order == null)
+        //     {
+        //         return NotFound(new { message = "Order not found." });
+        //     }
+
+        //     // Retrieve the washer using washerId
+        //     var washer = await _washerRepository.GetWasherByIdAsync(washerId);
+        //     if (washer == null)
+        //     {
+        //         return NotFound(new { message = "Washer not found." });
+        //     }
+
+        //     // Ensure that the washer is active and available
+        //     if (washer.WasherStatus != "Active")
+        //     {
+        //         return BadRequest(new { message = "Washer is not active and cannot be assigned to this order." });
+        //     }
+
+        //     // Check if the order is eligible to start (i.e., it's not already completed or canceled)
+        //     if (order.Status == "Completed" || order.Status == "Cancelled")
+        //     {
+        //         return BadRequest(new { message = "This order has already been completed or cancelled." });
+        //     }
+
+        //     // Update the order status to "In Progress"
+        //     order.Status = "In Progress";
+
+        //     // Update the order in the repository
+        //     await _orderRepository.UpdateOrderAsync(order);
+
+        //     // Return success message
+        //     return Ok(new { message = "Order marked as 'In Progress' successfully.", orderId = order.OrderId, newStatus = order.Status });
+        // }
+
+        // // PUT: api/orders/{orderId}/complete
+        // [Authorize(Roles = "Admin")]
+        // [HttpPut("{orderId}/complete")]
+        // [Authorize]
+        // public async Task<IActionResult> MarkWashAsCompleted(int orderId)
+        // {
+        //     var order = await _orderRepository.GetOrderByIdAsync(orderId);
+        //     if (order == null)
+        //     {
+        //         return NotFound(new { message = "Order not found." });
+        //     }
+
+        //     // Ensure the wash status is in progress before completing it
+        //     if (order.Status != "In Progress")
+        //     {
+        //         return BadRequest(new { message = "Order is not in progress, so it cannot be completed." });
+        //     }
+
+        //     // Update the order status to completed and mark payment as completed
+        //     order.Status = "Completed";
+        //     order.PaymentStatus = "Completed"; // Assuming payment is completed once the wash is completed
+
+        //     // Save changes
+        //     await _orderRepository.UpdateOrderAsync(order);
+
+        //     return Ok(new
+        //     {
+        //         message = "Wash completed successfully!",
+        //         order = new
+        //         {
+        //             order.OrderId,
+        //             order.CustomerId,
+        //             order.PackageId,
+        //             order.VehicleType,
+        //             order.Status,
+        //             order.PaymentStatus,
+        //             order.WashDate,
+        //             order.Location,
+        //             order.TotalPrice
+        //         }
+        //     });
+        // }
+
+        // // GET: api/orders/{customerId}/total-price
+        // [Authorize(Roles = "Admin")]
+        // [HttpGet("{customerId}/total-price")]
+        // [Authorize]
+        // public async Task<IActionResult> GetTotalPrice(int customerId)
+        // {
+        //     var orders = await _orderRepository.GetOrdersByCustomerIdAsync(customerId);
+        //     if (orders == null || !orders.Any())
+        //     {
+        //         return NotFound(new { message = "No orders found for this customer." });
+        //     }
+
+        //     decimal totalAmount = orders.Sum(order => order.TotalPrice);
+        //     return Ok(new { customerId = customerId, totalAmount });
+        // }
+
+        [Authorize(Roles = "Admin")]
+        [HttpGet("payments")]
+        public async Task<IActionResult> ViewPayments()
+        {
+            // Retrieve all payment transactions
+            var payments = await _paymentRepository.GetAllPaymentsAsync();
+
+            // If no payments are found, return a message
+            if (payments == null || payments.Count == 0)
+            {
+                return NotFound(new { message = "No payment transactions found." });
+            }
+
+            // Return the list of payments
+            return Ok(new { message = "Payments retrieved successfully.", payments });
+        }
+
+        // GET: api/payment/{orderId}
+        // [Authorize(Roles = "Admin")]
+        // [HttpGet("{orderId}")]
+        // public async Task<IActionResult> GetPaymentByOrderId(int orderId)
+        // {
+        //     // Fetch payment details by OrderId
+        //     var payment = await _paymentRepository.GetPaymentByOrderIdAsync(orderId);
+
+        //     if (payment == null)
+        //     {
+        //         return NotFound(new { message = $"Payment not found for Order ID {orderId}." });
+        //     }
+
+        //     // Map the fetched payment entity to PaymentDTO
+        //     var paymentDTO = new PaymentDTO
+        //     {
+        //         OrderId = payment.OrderId,
+        //         Amount = payment.Amount,
+        //         PaymentMethod = payment.PaymentMethod,
+        //         PaymentStatus = payment.PaymentStatus,
+        //         PaymentDate = payment.PaymentDate
+        //     };
+
+        //     return Ok(new { message = "Payment details fetched successfully.", payment = paymentDTO });
+        // }
+
+        [Authorize(Roles = "Admin")]
+        // GET: api/admin/reviews
+        [HttpGet("reviews")]
+        public async Task<IActionResult> GetAllReviews()
+        {
+            var reviews = await _reviewRepository.GetAllReviewsAsync();
+            if (reviews == null || !reviews.Any())
+            {
+                return NotFound(new { message = "No reviews found." });
+            }
+
+            return Ok(new { message = "Reviews retrieved successfully.", reviews });
+        }
+
+
+        // [Authorize(Roles = "Admin")] // Only admins can access this endpoint        
+        // [HttpPut("orders/{orderId}/status")]
+        // public async Task<IActionResult> UpdateOrderStatus(int orderId, [FromBody] string status)
+        // {
+        //     // Retrieve the order using orderId
+        //     var order = await _orderRepository.GetOrderByIdAsync(orderId);
+        //     if (order == null)
+        //     {
+        //         return NotFound(new { message = "Order not found." });
+        //     }
+
+        //     // Validate the provided status
+        //     var validStatuses = new string[] { "Pending", "InProgress", "Completed", "Cancelled" };
+        //     if (string.IsNullOrEmpty(status) || !Array.Exists(validStatuses, s => s == status))
+        //     {
+        //         return BadRequest(new { message = "Invalid status. Valid statuses are: Pending, InProgress, Completed, Cancelled." });
+        //     }
+
+        //     // Update the order status
+        //     order.Status = status;
+
+        //     // Update the order in the repository
+        //     await _orderRepository.UpdateOrderAsync(order);
+
+        //     // Return success message
+        //     return Ok(new { message = "Order status updated successfully.", orderId = order.OrderId, newStatus = order.Status });
+        // }
+
+        // [Authorize(Roles = "Admin")] // Only admins can access this endpoint
+        // // GET: api/washers/{washerId}/earnings
+        // [HttpGet("{washerId}/earnings")]
+        // public async Task<IActionResult> GetEarnings(int washerId)
+        // {
+        //     // Retrieve all completed orders for the washer with the given washerId
+        //     var completedOrders = await _orderRepository.GetOrdersByWasherIdAndStatusAsync(washerId, "Completed");
+
+        //     // If no completed orders found, return an appropriate message
+        //     if (completedOrders == null || !completedOrders.Any())
+        //     {
+        //         return NotFound(new { message = "No completed orders found for this washer." });
+        //     }
+
+        //     // Calculate the total earnings by summing the TotalPrice of completed orders
+        //     var totalEarnings = completedOrders.Sum(order => order.TotalPrice);
+
+        //     // Return the total earnings
+        //     return Ok(new { washerId, totalEarnings });
+        // }
+
+        
+
+        // POST: api/admin/washers/{washerId}/deactivate
+         [Authorize(Roles = "Admin")]
+        [HttpPost("washers/{washerId}/deactivate")]
+        public async Task<IActionResult> DeactivateWasher(int washerId)
+        {
+            // Retrieve the washer using washerId
+            var washer = await _washerRepository.GetWasherByIdAsync(washerId);
+            if (washer == null)
+            {
+                return NotFound(new { message = "Washer not found." });
+            }
+
+            // Deactivate washer account (change status to "Inactive")
+            washer.WasherStatus = "Inactive";
+            await _washerRepository.UpdateWasherAsync(washer);
+
+            // Return success message
+            return Ok(new { message = "Washer account deactivated successfully." });
+        }
+
+        [Authorize(Roles = "Admin")]
+        [HttpGet("reports")]
+        public async Task<IActionResult> GetFilteredReport(
+            [FromQuery] string? orderNumber = null,
+            [FromQuery] string? washerName = null,
+            [FromQuery] string? vehicleType = null,
+            [FromQuery] string? packageName = null,
+            [FromQuery] DateTime? startDate = null,
+            [FromQuery] DateTime? endDate = null)
+        {
+            // Fetch all orders with their related WashPackage and Washer details
+            var orders = await _orderRepository.GetAllOrdersAsync(); 
+
+            // Apply filters based on query parameters
+            if (!string.IsNullOrWhiteSpace(orderNumber))
+            {
+                orders = orders.Where(o => o.OrderId.ToString().Contains(orderNumber)).ToList();
+            }
+
+            if (!string.IsNullOrWhiteSpace(washerName))
+            {
+                orders = orders.Where(o => o.Washer.Name.Contains(washerName, StringComparison.OrdinalIgnoreCase)).ToList();
+            }
+
+            if (!string.IsNullOrWhiteSpace(vehicleType))
+            {
+                orders = orders.Where(o => o.VehicleType.Contains(vehicleType, StringComparison.OrdinalIgnoreCase)).ToList();
+            }
+
+            if (!string.IsNullOrWhiteSpace(packageName))
+            {
+                orders = orders.Where(o => o.Package.PackageName.Contains(packageName, StringComparison.OrdinalIgnoreCase)).ToList();
+            }
+
+            if (startDate.HasValue)
+            {
+                orders = orders.Where(o => o.OrderDate >= startDate.Value).ToList();
+            }
+
+            if (endDate.HasValue)
+            {
+                orders = orders.Where(o => o.OrderDate <= endDate.Value).ToList();
+            }
+
+            // If no orders match the filter, return NotFound
+            if (orders == null || !orders.Any())
+            {
+                return NotFound(new { message = "No orders found matching the specified criteria." });
+            }
+
+            // Return filtered orders with a success message
+            return Ok(new
+            {
+                message = "Report generated successfully.",
+                orders
+            });
+        }
+
+
+
+    }
+}
+
+
+-------------------------------------------------------------------------
+
+*** CarController ***
+
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using System.Threading.Tasks;
+using CarWashAPI.Models;
+using CarWashAPI.DTO;
+using CarWashAPI.Repositories;
+using CarWashAPI.Data;
+
+namespace CarWashAPI.Controllers
+{
+    [Authorize(Roles = "Customer")]
+    [Route("api/customers")]
+    [ApiController]
+    public class CarController : ControllerBase
+    {
+        private readonly ICarRepository _carRepository;
+        private readonly CarWashDbContext _context;
+
+        // Constructor injection for repository and context
+        public CarController(ICarRepository carRepository, CarWashDbContext context)
+        {
+            _carRepository = carRepository;
+            _context = context;
+        }
+
+        // POST: api/customers/{customerId}/addCar
+        [HttpPost("{customerId}/addCar")]
+        public async Task<IActionResult> AddCar(int customerId, [FromBody] CarDTO carDTO)
+        {
+            // Step 1: Validate if the customer exists
+            var customer = await _context.Customers.FindAsync(customerId);
+            if (customer == null)
+            {
+                return NotFound(new { message = "Customer not found." });
+            }
+
+            // Step 2: Map CarDTO to Car entity
+            var car = new Car
+            {
+                CustomerId = customerId,  // Set the CustomerId as the foreign key
+                Make = carDTO.Make,
+                Model = carDTO.Model,
+                Year = carDTO.Year,
+                LicensePlate = carDTO.LicensePlate,
+                VehicleType = carDTO.VehicleType
+            };
+
+            // Step 3: Add the car to the database
+            _context.Cars.Add(car);
+            await _context.SaveChangesAsync();
+
+            // Step 4: Return the added car (or an appropriate response)
+            return Ok(new { message = "Car added successfully!", car });
+        }
+
+        // GET: api/customers/{customerId}/getCar
+        [HttpGet("{customerId}/getCar")]
+        public async Task<IActionResult> GetCarByCustomerId(int customerId)
+        {
+            // Fetch the car by customer ID
+            var car = await _carRepository.GetCarByCustomerIdAsync(customerId);
+
+            if (car == null)
+            {
+                return NotFound(new { message = "Car not found for the given customer." });
+            }
+
+            // Return car details
+            return Ok(new { message = "Car fetched successfully.", car });
+        }
+
+        // PUT: api/customers/{customerId}/updateCar
+        [HttpPut("{customerId}/updateCar")]
+        public async Task<IActionResult> UpdateCarDetails(int customerId, [FromBody] CarDTO carDTO)
+        {
+            if (carDTO == null || customerId != carDTO.CustomerId)
+            {
+                return BadRequest(new { message = "Invalid car details or customer ID mismatch." });
+            }
+
+            // Call repository method to update car details
+            var updateSuccessful = await _carRepository.UpdateCarDetailsAsync(carDTO);
+
+            if (updateSuccessful)
+            {
+                return Ok(new { message = "Car details updated successfully." });
+            }
+            else
+            {
+                return NotFound(new { message = "Car not found for the given customer." });
+            }
+        }
+
+        // DELETE: api/customers/{customerId}/car
+        [HttpDelete("{customerId}/car")]
+        public async Task<IActionResult> DeleteCar(int customerId)
+        {
+            // Fetch the car for this customer
+            var car = await _carRepository.GetCarByCustomerIdAsync(customerId);
+
+            if (car == null)
+            {
+                return NotFound(new { message = "Car not found for this customer." });
+            }
+
+            // Delete the car
+            var success = await _carRepository.DeleteCarAsync(car.CarId);
+            if (success)
+            {
+                return Ok(new { message = "Car deleted successfully." });
+            }
+            else
+            {
+                return BadRequest(new { message = "Unable to delete car. Please try again." });
+            }
+        }
+    }
+}
+
+
+--------------------------------------------------------------------------
+
+*** CustomerController ***
+
+using CarWashAPI.DTO;
+using CarWashAPI.Repositories;
+using Microsoft.AspNetCore.Mvc;
+using CarWashAPI.Models;
+using AutoMapper;
+using CarWashAPI.Data;
+using System.Security.Claims;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
+using System.IdentityModel.Tokens.Jwt;
+using Microsoft.AspNetCore.Authorization;
+namespace CarWashAPI.Controllers
+{
+    [Route("api/[controller]")]
+    [ApiController]
+    public class CustomerController : ControllerBase
+    {
+        private readonly ICustomerRepository _customerRepository;
+        private readonly ICarRepository _carRepository;
+        private readonly IMapper _mapper;
+        private readonly CarWashDbContext _context;
+        private readonly IConfiguration _configuration;
+        private readonly IOrderRepository _orderRepository;
+        private readonly IWashPackageRepository _washPackageRepository;
+        private readonly IAddOnRepository _addOnRepository;
+        private readonly IWasherRepository _washerRepository;
+        private readonly IPaymentRepository _paymentRepository;
+        private readonly IReviewRepository _reviewRepository;
+        
+
+        public CustomerController(
+            ICustomerRepository customerRepository, 
+            IMapper mapper, CarWashDbContext context, 
+            ICarRepository carRepository,
+            IConfiguration configuration,
+            IOrderRepository orderRepository, 
+            IWashPackageRepository washPackageRepository, 
+            IAddOnRepository addOnRepository,
+            IWasherRepository washerRepository,
+            IPaymentRepository paymentRepository,
+            IReviewRepository reviewRepository)
+        {
+            _customerRepository = customerRepository;
+             _mapper = mapper;
+             _context = context;
+             _carRepository = carRepository;
+             _configuration = configuration;
+             _orderRepository = orderRepository;
+            _washPackageRepository = washPackageRepository;
+            _addOnRepository = addOnRepository;
+            _washerRepository = washerRepository;
+            _paymentRepository = paymentRepository;
+            _reviewRepository = reviewRepository;
+           
+        }
+
+        // POST: api/customer/register
+        [HttpPost("register")]
+        public async Task<IActionResult> RegisterCustomer([FromBody] CustomerDTO customerDto)
+        {
+            if (customerDto == null)
+            {
+                return BadRequest("Customer data is required.");
+            }
+
+            var customer = await _customerRepository.RegisterCustomerAsync(customerDto);
+
+            if (customer == null)
+            {
+                return BadRequest("A customer with this email already exists.");
+            }
+
+            return Ok(new { message = "Registration successful!" });
+        }
+        // Method to generate JWT token for an authenticated admin
+        private string GenerateJwtToken(Customer customer)
+        {
+            // Retrieve secret key, issuer, and audience from configuration (updated for AppSettings)
+            var secretKey = _configuration["AppSettings:Secret"];
+            var issuer = _configuration["AppSettings:Issuer"];
+            var audience = "Customer";
+
+            // Check if the secret key is missing or empty
+            if (string.IsNullOrEmpty(secretKey))
+            {
+                throw new ArgumentNullException("AppSettings:Secret", "JWT Secret Key is missing in configuration.");
+            }
+
+            // Define claims for the token
+            var claims = new[]
+            {
+                
+                new Claim(ClaimTypes.Email, customer.Email),
+                new Claim(ClaimTypes.Role, "Customer")  // Add the role claim
+            };
+
+            // Create the signing credentials
+            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey));
+            var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+
+            // Create the JWT token
+            var token = new JwtSecurityToken(
+                issuer: issuer,
+                audience: audience,
+                claims: claims,
+                expires: DateTime.Now.AddHours(1),
+                signingCredentials: creds
+            );
+
+            // Return the token as a string
+            return new JwtSecurityTokenHandler().WriteToken(token);
+        }
+        // POST: api/customer/login
+        [HttpPost("login")]
+        public async Task<IActionResult> LoginCustomer(string Email,string Password)
+        {
+            if (string.IsNullOrEmpty(Email) || string.IsNullOrEmpty(Password))
+            {
+                return BadRequest("Email and password are required.");
+            }
+
+            var authenticatedCustomer = await _customerRepository.AuthenticateCustomerAsync(Email,Password);
+
+            if (authenticatedCustomer == null)
+            {
+                return Unauthorized(new { message = "Invalid email or password." });
+            }
+            var token = GenerateJwtToken(authenticatedCustomer);
+            return Ok(new { message = "Login successful!" ,Token=token});
+        }
+
+        // // Get all customers
+        // [Authorize(Roles ="Customer")]
+        // [HttpGet]
+        // public async Task<IActionResult> GetAllCustomers()
+        // {
+        //     var customers = await _customerRepository.GetAllCustomersAsync();
+        //     var customerDtos = _mapper.Map<IEnumerable<CustomerDTO>>(customers);
+        //     return Ok(customerDtos);
+        // }
+
+        // Get customer by Email
+        [Authorize(Roles ="Customer")]
+        [HttpGet("email/{email}")]
+        public async Task<IActionResult> GetCustomerByEmail(string email)
+        {
+            var customer = await _customerRepository.GetCustomerByEmailAsync(email);
+            if (customer == null)
+            {
+                return NotFound();
+            }
+
+            var customerDto = _mapper.Map<CustomerDTO>(customer);
+            return Ok(customerDto);
+        }
+
+        // Get customer by ID
+        [Authorize(Roles ="Customer")]
+        [HttpGet("{customerId}")]
+        public async Task<IActionResult> GetCustomerById(int customerId)
+        {
+            var customer = await _customerRepository.GetCustomerByIdAsync(customerId);
+            if (customer == null)
+            {
+                return NotFound();
+            }
+
+            var customerDto = _mapper.Map<Customer>(customer);
+            // var customerDto = _mapper.Map<CustomerDTO>(customer);
+            return Ok(customerDto);
+        }
+
+       
+         //Update an existing customer
+         [Authorize(Roles ="Customer")]
+        [HttpPut("{customerId}")]
+        public async Task<IActionResult> UpdateCustomer(int customerId, [FromBody] Customer cust)
+        {
+            if (cust == null || customerId != cust.CustomerId)
+            {
+                return BadRequest();
+            }
+
+            // Map DTO to Model
+            var customer = _mapper.Map<Customer>(cust);
+            customer = await _customerRepository.UpdateCustomerAsync(customer);
+
+            if (customer == null)
+            {
+                return NotFound();
+            }
+
+            var updatedCustomerDto = _mapper.Map<CustomerDTO>(customer);
+            return Ok(updatedCustomerDto);
+        }
+
+        // Delete a customer by Id
+        [Authorize(Roles ="Customer")]
+        [HttpDelete("{customerId}")]
+        public async Task<IActionResult> DeleteCustomer(int customerId)
+        {
+            var result = await _customerRepository.DeleteCustomerAsync(customerId);
+            if (!result)
+            {
+                return NotFound();
+            }
+            return NoContent();
+        }
+
+    //     // POST: api/car/add
+    //     [Authorize(Roles ="Customer")]
+    //     [HttpPost("addCar")]
+    //     public async Task<IActionResult> AddCar([FromBody] CarDTO carDTO)
+    //     {
+    //         // Step 1: Validate the customer exists by customerId
+    //         var customer = await _context.Customers.FindAsync(carDTO.CustomerId);
+    //         if (customer == null)
+    //         {
+    //             return NotFound("Customer not found.");
+    //         }
+
+    //         // Step 2: Map CarDTO to Car entity
+    //         var car = new Car
+    //         {
+    //             CustomerId = carDTO.CustomerId,  // Set the CustomerId as the foreign key
+    //             Make = carDTO.Make,
+    //             Model = carDTO.Model,
+    //             Year = carDTO.Year,
+    //             LicensePlate = carDTO.LicensePlate,
+    //             VehicleType = carDTO.VehicleType
+    //         };
+
+    //         // Step 3: Add the car to the database
+    //         _context.Cars.Add(car);
+    //         await _context.SaveChangesAsync();
+
+    //         // Step 4: Return the added car (or an appropriate response)
+    //         return Ok(new { message = "Car added successfully!", car });
+    //     }
+
+    //     // GET: api/Customer/{customerId}/getCar
+    //     [Authorize(Roles ="Customer")]
+    //     [HttpGet("{customerId}/getCar")]
+    //     public async Task<IActionResult> GetCarByCustomerId(int customerId)
+    //     {
+    //         // Fetch the car by customer ID
+    //         var car = await _carRepository.GetCarByCustomerIdAsync(customerId);
+
+    //         if (car == null)
+    //         {
+    //             return NotFound("Car not found for the given customer.");
+    //         }
+
+    //         // Return car details
+    //         return Ok(car);
+    //     }
+
+    //     // PUT: api/Customer/{customerId}/updateCar
+    //     [Authorize(Roles ="Customer")]
+    //     [HttpPut("{customerId}/updateCar")]
+    //     public async Task<IActionResult> UpdateCarDetails(int customerId, [FromBody] CarDTO carDTO)
+    //     {
+    //         if (carDTO == null || customerId != carDTO.CustomerId)
+    //         {
+    //             return BadRequest("Invalid car details or customer ID mismatch.");
+    //         }
+
+    //         // Call repository method to update car details
+    //         bool updateSuccessful = await _carRepository.UpdateCarDetailsAsync(carDTO);
+
+    //         if (updateSuccessful)
+    //         {
+    //             return Ok(new { message = "Car details updated successfully." }); // Return 204 No Content after successful update
+    //         }
+    //         else
+    //         {
+    //             return NotFound("Car not found for the given customer.");
+    //         }
+    //     }
+
+    //     [Authorize(Roles ="Customer")]
+    //    // DELETE: api/customers/{customerId}/car
+    //     [HttpDelete("{customerId}/car")]
+    //     public async Task<IActionResult> DeleteCar(int customerId)
+    //     {
+    //         // Implement the logic to delete the car for this customer
+    //         var car = await _carRepository.GetCarByCustomerIdAsync(customerId);
+    //         if (car == null)
+    //         {
+    //             return NotFound(new { message = "Car not found for this customer." });
+    //         }
+
+    //         var success = await _carRepository.DeleteCarAsync(car.CarId);
+    //         if (success)
+    //         {
+    //             return Ok(new { message = "Car deleted successfully." });
+    //         }
+    //         else
+    //         {
+    //             return BadRequest(new { message = "Unable to delete car. Please try again." });
+    //         }
+    //     }
+
+        // [Authorize(Roles ="Customer")]
+        // [HttpGet("AllPackages")]
+        // public async Task<IActionResult> GetAllPackages()
+        // {
+        //     var packages = await _washPackageRepository.GetAllPackagesAsync();
+        //     if (packages == null || !packages.Any())
+        //     {
+        //         return NotFound(new { message = "No wash packages found." });
+        //     }
+        //     return Ok(new { message = "Fetched all wash packages successfully.", packages });
+        // }
+
+        
+        // [Authorize(Roles ="Customer")]
+        // [HttpGet("AllAddOn")]
+        // public async Task<ActionResult<IEnumerable<AddOnDTO>>> GetAllAddOns()
+        // {
+        //     // Fetch all AddOns from the repository (using the model)
+        //     var addOns = await _addOnRepository.GetAllAddOnsAsync();
+            
+        //     if (addOns == null || addOns.Count == 0)
+        //     {
+        //         return NotFound(new { message = "No add-ons found." });
+        //     }
+
+        //     // Map from AddOn (Model) to AddOnDTO (DTO) using AutoMapper
+        //     var addOnDtos = _mapper.Map<IEnumerable<AddOnDTO>>(addOns);
+
+        //     // Dynamically include AddOnId in the response (even though AddOnDTO doesn't have it)
+        //     var result = addOns.Select(addOn => new
+        //     {
+        //         addOn.AddOnId,  // Include AddOnId dynamically in the response
+        //         addOn.AddOnName,
+        //         addOn.AddOnPrice,
+        //         addOn.Description
+        //     });
+
+        //     // Return response with the AddOnId included, even though it's not part of AddOnDTO
+        //     return Ok(new { message = "Add-ons retrieved successfully.", data = result });
+        // }
+
+
+        // [Authorize(Roles ="Customer")]
+        // [HttpPost("Order")]
+        // public async Task<IActionResult> CreateOrder([FromBody] OrderDTO orderDto)
+        // {
+        //     // Check if the customer exists
+        //     var customer = await _customerRepository.GetCustomerByIdAsync(orderDto.CustomerId);
+        //     if (customer == null)
+        //     {
+        //         return NotFound(new { message = "Customer not found." });
+        //     }
+
+        //     // Get the car associated with the customer
+        //     var car = await _carRepository.GetCarByCustomerIdAsync(orderDto.CustomerId);
+        //     if (car == null)
+        //     {
+        //         return NotFound(new { message = "Customer does not have a car registered." });
+        //     }
+
+        //     // Validate if the vehicle type of car matches the order's vehicle type
+        //     if (car.VehicleType != orderDto.VehicleType)
+        //     {
+        //         return BadRequest(new { message = "Vehicle type does not match the registered car." });
+        //     }
+
+        //     // Get the wash package details
+        //     var package = await _washPackageRepository.GetPackageByIdAsync(orderDto.PackageId);
+        //     if (package == null)
+        //     {
+        //         return BadRequest(new { message = "Package not found." });
+        //     }
+
+        //     // Validate AddOnId if provided (check if it exists in the database)
+        //     if (orderDto.AddOnId.HasValue && orderDto.AddOnId.Value != 0)
+        //     {
+        //         var addon = await _addOnRepository.GetAddOnByIdAsync(orderDto.AddOnId.Value);
+        //         if (addon == null)
+        //         {
+        //             return BadRequest(new { message = $"AddOn with ID {orderDto.AddOnId.Value} not found." });
+        //         }
+        //     }
+
+            
+        //     // Get the wash package and add-on details
+        //      package = await _washPackageRepository.GetPackageByIdAsync(orderDto.PackageId);
+        //     // Get the AddOn details if an AddOnId is provided (check for AddOnId being 0 or null)
+        //         var addOn = orderDto.AddOnId.HasValue && orderDto.AddOnId.Value != 0
+        //         ? await _addOnRepository.GetAddOnByIdAsync(orderDto.AddOnId.Value)
+        //         : null;
+
+        //     // Calculate total price based on the package and add-ons
+        //     //decimal totalPrice = package.Price + (addOn?.AddOnPrice ?? 0);
+
+        //     // Calculate total price based on the package and add-ons
+        //     decimal totalPrice = package.Price + (orderDto.AddOnId.HasValue && orderDto.AddOnId.Value != 0 ? (await _addOnRepository.GetAddOnByIdAsync(orderDto.AddOnId.Value)).AddOnPrice : 0);
+
+        //     // Get the available washer with matching vehicle type and active status
+        //     var washer = await _washerRepository.GetAvailableWasherByVehicleTypeAsync(orderDto.VehicleType);
+
+        //     // Handle conditions based on washer status and vehicle type
+        //     if (washer == null)
+        //     {
+        //         return BadRequest(new { message = "No available active washers for this vehicle type." });
+        //     }
+
+        //     if (washer.WasherStatus != "Active")
+        //     {
+        //         return BadRequest(new { message = "No active washers available for this vehicle type." });
+        //     }
+
+        //     // Determine the order's location (prioritize customer location if provided, otherwise use washer location)
+        //     string location = orderDto.Location ?? customer.Address ?? washer.Address;
+
+        //     // Create a new order
+        //     var newOrder = new Order
+        //     {
+        //         CustomerId = orderDto.CustomerId,
+        //         WasherId = washer.WasherId,  // Automatically assigned washer
+        //         PackageId = orderDto.PackageId,
+        //         VehicleType = orderDto.VehicleType,
+        //         Status = "Pending",  // Default status is "Pending"
+        //         PaymentStatus = orderDto.PaymentStatus ?? "Pending",  // Default to Pending if not specified
+        //         OrderDate = DateTime.Now,
+        //         WashDate = orderDto.WashDate,
+        //         Location = location,  // Ensure location is assigned correctly
+        //         AddOnId = orderDto.AddOnId ?? 0,
+        //         TotalPrice = totalPrice
+        //     };
+
+        //     // Check whether the wash is "Wash Now" or "Scheduled"
+        //     if (newOrder.WashDate <= DateTime.Now)
+        //     {
+        //         newOrder.Status = "InProgress";  // Immediate wash
+        //         //newOrder.PaymentStatus = "Pending"; // Initially, payment is "Pending" for Wash Now
+
+        //         // Save the order and return a success message
+        //         await _orderRepository.CreateOrderAsync(newOrder);
+
+        //         return Ok(new { message = "Order placed successfully. Wash Now request placed.", order = newOrder });
+        //     }
+        //     else
+        //     {
+        //         newOrder.Status = "Scheduled";  // Scheduled wash
+
+        //         // Save the order and return a success message
+        //         await _orderRepository.CreateOrderAsync(newOrder);
+
+        //         return Ok(new { message = "Order placed successfully. Scheduled Wash request placed.", order = newOrder });
+        //     }
+        // }
+
+        // // POST: api/customers/{customerId}/orders/{orderId}/payment
+        // [Authorize(Roles ="Customer")]
+        // [HttpPost("{customerId}/orders/{orderId}/payment")]
+        // public async Task<IActionResult> MakePayment(int customerId, int orderId, [FromBody] PaymentDTO paymentDto)
+        // {
+        //     // Check if the customer exists
+        //     var customer = await _customerRepository.GetCustomerByIdAsync(customerId);
+        //     if (customer == null)
+        //     {
+        //         return NotFound(new { message = "Customer not found." });
+        //     }
+
+        //     // Get the order associated with the customer
+        //     var order = await _orderRepository.GetOrderByIdAsync(orderId);
+        //     if (order == null || order.CustomerId != customerId)
+        //     {
+        //         return NotFound(new { message = "Order not found or does not belong to this customer." });
+        //     }
+
+        //     // Check if the order is eligible for payment
+        //     if (order.Status != "InProgress")
+        //     {
+        //         return BadRequest(new { message = "Order is not in progress and cannot be paid." });
+        //     }
+
+        //     // Create the payment object
+        //     var payment = new Payment
+        //     {
+        //         OrderId = orderId,
+        //         Amount = paymentDto.Amount,
+        //         PaymentMethod = paymentDto.PaymentMethod,
+        //         PaymentStatus = "Completed",  // Mark as "Completed" after payment
+        //         PaymentDate = DateTime.Now,
+        //         Receipt = GenerateReceipt(order, paymentDto)  // Generate receipt dynamically
+        //     };
+
+        //     // Save the payment
+        //     await _paymentRepository.CreatePaymentAsync(payment);
+
+        //     // Update the order's payment status
+        //     order.PaymentStatus = "Completed";
+        //     await _orderRepository.UpdateOrderAsync(order);
+
+        //     // Return a success message with the generated receipt
+        //     return Ok(new 
+        //     {
+        //         message = "Payment successful.",
+        //         paymentStatus = order.PaymentStatus,
+        //         receipt = payment.Receipt // Send receipt in response
+        //     });
+        // }
+
+        // private string GenerateReceipt(Order order, PaymentDTO paymentDto)
+        // {
+        //     // You can customize this receipt generation logic as per your business needs.
+        //     return $"Receipt for Order ID {order.OrderId}\n" +
+        //         $"Customer: {order.CustomerId}\n" +
+        //         $"Amount Paid: {paymentDto.Amount:C}\n" +
+        //         $"Payment Method: {paymentDto.PaymentMethod}\n" +
+        //         $"Payment Status: Completed\n" +
+        //         $"Payment Date: {DateTime.Now}\n" +
+        //         $"Wash Package: {order.PackageId}\n" +
+        //         $"Location: {order.Location}\n" +
+        //         $"Wash Date: {order.WashDate}\n" +
+        //         $"Thank you for using our service!";
+        // }
+
+        // // PUT: api/orders/{orderId}/payment-status
+        // [Authorize(Roles ="Customer")]
+        // [HttpPut("{orderId}/payment-status")]
+        // public async Task<IActionResult> UpdatePaymentStatus(int orderId, [FromBody] string newPaymentStatus)
+        // {
+        //     var order = await _orderRepository.GetOrderByIdAsync(orderId);
+        //     if (order == null)
+        //     {
+        //         return NotFound(new { message = "Order not found." });
+        //     }
+
+        //     // Validating payment status transitions
+        //     if (newPaymentStatus != "Pending" && newPaymentStatus != "Completed")
+        //     {
+        //         return BadRequest(new { message = "Payment status can only be 'Pending' or 'Completed'." });
+        //     }
+
+        //     // Update the payment status
+        //     order.PaymentStatus = newPaymentStatus;
+        //     await _orderRepository.UpdateOrderAsync(order);
+
+        //     return Ok(new
+        //     {
+        //         message = $"Payment status updated to {newPaymentStatus}.",
+        //         order = new
+        //         {
+        //             order.OrderId,
+        //             order.CustomerId,
+        //             order.PackageId,
+        //             order.VehicleType,
+        //             order.Status,
+        //             order.PaymentStatus,
+        //             order.WashDate,
+        //             order.Location,
+        //             order.TotalPrice
+        //         }
+        //     });
+        // }
+
+
+        // // GET: api/customers/{customerId}/orders
+        // [Authorize(Roles ="Customer")]
+        // [HttpGet("{customerId}/orders")]
+        // public async Task<IActionResult> GetOrderHistory(int customerId)
+        // {
+        //     // Fetch all orders for the given customerId
+        //     var orders = await _orderRepository.GetOrdersByCustomerIdAsync(customerId);
+
+        //     if (orders == null || orders.Count == 0)
+        //     {
+        //         return NotFound(new { message = "No orders found for this customer." });
+        //     }
+
+        //     // Return a success message along with the orders
+        //     return Ok(new
+        //     {
+        //         message = "Order history retrieved successfully.",
+        //         orders = orders.Select(order => new
+        //         {
+        //             order.OrderId,
+        //             order.Status,
+        //             order.PaymentStatus,  // Include PaymentStatus here
+        //             order.TotalPrice,
+        //             order.WashDate,
+        //             order.Location,
+        //             order.OrderDate
+        //         })
+        //     });
+        // }
+
+        // // POST: api/customers/{customerId}/reviews
+        // [Authorize(Roles ="Customer")]
+        // [HttpPost("{customerId}/reviews")]
+        // public async Task<IActionResult> RateReviewWasher(int customerId, [FromBody] ReviewDTO reviewDto)
+        // {
+        //     // Ensure the customer exists
+        //     var customer = await _customerRepository.GetCustomerByIdAsync(customerId);
+        //     if (customer == null)
+        //     {
+        //         return NotFound(new { message = "Customer not found." });
+        //     }
+
+        //     // Ensure the washer exists
+        //     var washer = await _washerRepository.GetWasherByIdAsync(reviewDto.WasherId);
+        //     if (washer == null)
+        //     {
+        //         return NotFound(new { message = "Washer not found." });
+        //     }
+
+        //     // Optional: You could also verify if the customer has actually completed an order with the washer.
+
+        //     // Validate the rating (ensure it's between 1 and 5)
+        //     if (reviewDto.Rating < 1 || reviewDto.Rating > 5)
+        //     {
+        //         return BadRequest(new { message = "Rating must be between 1 and 5." });
+        //     }
+
+        //     // Create the review object
+        //     var review = new Review
+        //     {
+        //         CustomerId = customerId,
+        //         WasherId = reviewDto.WasherId,
+        //         Rating = reviewDto.Rating,
+        //         Comment = reviewDto.Comment,
+        //         ReviewDate = DateTime.Now,
+        //         OrderId = reviewDto.OrderId // If there's a related order
+        //     };
+
+        //     // Save the review to the database
+        //     var savedReview = await _reviewRepository.AddReviewAsync(review);
+
+        //     // Return a success response with the saved review
+        //     return Ok(new { message = "Review submitted successfully.", review = savedReview });
+        // }
+
+        // // GET: api/customers/{customerId}/reviews
+        // [Authorize(Roles ="Customer")]
+        // [HttpGet("{customerId}/reviews")]
+        // public async Task<IActionResult> GetCustomerReviews(int customerId)
+        // {
+        //     // Ensure the customer exists
+        //     var customer = await _customerRepository.GetCustomerByIdAsync(customerId);
+        //     if (customer == null)
+        //     {
+        //         return NotFound(new { message = "Customer not found." });
+        //     }
+
+        //     // Retrieve all reviews written by the customer
+        //     var reviews = await _reviewRepository.GetReviewsByCustomerIdAsync(customerId);
+        //     if (reviews == null || !reviews.Any())
+        //     {
+        //         return NotFound(new { message = "No reviews found for this customer." });
+        //     }
+
+        //     // Return the reviews for the customer
+        //     return Ok(new { message = "Reviews retrieved successfully.", reviews});
+        // }
+
+        //   // PUT: api/customers/{customerId}/reviews/{reviewId}/update
+        // [Authorize(Roles ="Customer")]
+        // [HttpPut("{customerId}/reviews/{reviewId}/update")]
+        // public async Task<IActionResult> UpdateReview(int customerId, int reviewId, [FromBody] ReviewDTO reviewDto)
+        // {
+        //     // Ensure the customer exists
+        //     var customer = await _customerRepository.GetCustomerByIdAsync(customerId);
+        //     if (customer == null)
+        //     {
+        //         return NotFound(new { message = "Customer not found." });
+        //     }
+
+        //     // Retrieve the review using reviewId
+        //     var review = await _reviewRepository.GetReviewByIdAsync(reviewId);
+        //     if (review == null)
+        //     {
+        //         return NotFound(new { message = "Review not found." });
+        //     }
+
+        //     // Ensure the logged-in customer is the one who created the review
+        //     var currentUserId = int.Parse(User.Identity.Name); // Assuming user ID is stored in JWT token
+        //     if (review.CustomerId != currentUserId && review.CustomerId != customerId)
+        //     {
+        //         return Unauthorized(new { message = "You are not authorized to update this review." });
+        //     }
+
+        //     // Validate the rating value (ensure it's between 1 and 5)
+        //     if (reviewDto.Rating < 1 || reviewDto.Rating > 5)
+        //     {
+        //         return BadRequest(new { message = "Rating must be between 1 and 5." });
+        //     }
+
+        //     // Update the review fields
+        //     review.Rating = reviewDto.Rating;
+        //     review.Comment = reviewDto.Comment;
+        //     review.ReviewDate = DateTime.Now; // Set the review date to the current time
+
+        //     // Save the updated review
+        //     await _reviewRepository.UpdateReviewAsync(review);
+
+        //     // Return success response
+        //     return Ok(new { message = "Review updated successfully.", review });
+        // }
+        
+    }
+}
+
+
+--------------------------------------------------
+
+*** OrderController ***
+
+using Microsoft.AspNetCore.Mvc;
+using CarWashAPI.DTO;
+using CarWashAPI.Repositories;
+using CarWashAPI.Models;
+using Microsoft.AspNetCore.Authorization;
+using System.Linq;
+
+namespace CarWashAPI.Controllers
+{
+    [Route("api/orders")]
+    [ApiController]
+    public class OrderController : ControllerBase
+    {
+        private readonly IOrderRepository _orderRepository;
+        private readonly IWashPackageRepository _washPackageRepository;
+        private readonly IAddOnRepository _addOnRepository;
+        private readonly ICustomerRepository _customerRepository;
+        private readonly IWasherRepository _washerRepository;
+        private readonly ICarRepository _carRepository;
+
+        public OrderController(
+            IOrderRepository orderRepository, 
+            IWashPackageRepository washPackageRepository, 
+            IAddOnRepository addOnRepository,
+            ICustomerRepository customerRepository,
+            IWasherRepository washerRepository,
+            ICarRepository carRepository) 
+        {
+            _orderRepository = orderRepository;
+            _washPackageRepository = washPackageRepository;
+            _addOnRepository = addOnRepository;
+            _customerRepository = customerRepository;
+            _washerRepository = washerRepository;
+            _carRepository = carRepository;
+        }
+
+        [Authorize(Roles ="Customer")]
+        [HttpPost("Order")]
+        public async Task<IActionResult> CreateOrder([FromBody] OrderDTO orderDto)
+        {
+            // Check if the customer exists
+            var customer = await _customerRepository.GetCustomerByIdAsync(orderDto.CustomerId);
+            if (customer == null)
+            {
+                return NotFound(new { message = "Customer not found." });
+            }
+
+            // Get the car associated with the customer
+            var car = await _carRepository.GetCarByCustomerIdAsync(orderDto.CustomerId);
+            if (car == null)
+            {
+                return NotFound(new { message = "Customer does not have a car registered." });
+            }
+
+            // Validate if the vehicle type of car matches the order's vehicle type
+            if (car.VehicleType != orderDto.VehicleType)
+            {
+                return BadRequest(new { message = "Vehicle type does not match the registered car." });
+            }
+
+            // Get the wash package details
+            var package = await _washPackageRepository.GetPackageByIdAsync(orderDto.PackageId);
+            if (package == null)
+            {
+                return BadRequest(new { message = "Package not found." });
+            }
+
+            // Validate AddOnId if provided (check if it exists in the database)
+            if (orderDto.AddOnId.HasValue && orderDto.AddOnId.Value != 0)
+            {
+                var addon = await _addOnRepository.GetAddOnByIdAsync(orderDto.AddOnId.Value);
+                if (addon == null)
+                {
+                    return BadRequest(new { message = $"AddOn with ID {orderDto.AddOnId.Value} not found." });
+                }
+            }
+
+            
+            // Get the wash package and add-on details
+             package = await _washPackageRepository.GetPackageByIdAsync(orderDto.PackageId);
+            // Get the AddOn details if an AddOnId is provided (check for AddOnId being 0 or null)
+                var addOn = orderDto.AddOnId.HasValue && orderDto.AddOnId.Value != 0
+                ? await _addOnRepository.GetAddOnByIdAsync(orderDto.AddOnId.Value)
+                : null;
+
+            // Calculate total price based on the package and add-ons
+            //decimal totalPrice = package.Price + (addOn?.AddOnPrice ?? 0);
+
+            // Calculate total price based on the package and add-ons
+            decimal totalPrice = package.Price + (orderDto.AddOnId.HasValue && orderDto.AddOnId.Value != 0 ? (await _addOnRepository.GetAddOnByIdAsync(orderDto.AddOnId.Value)).AddOnPrice : 0);
+
+            // Get the available washer with matching vehicle type and active status
+            var washer = await _washerRepository.GetAvailableWasherByVehicleTypeAsync(orderDto.VehicleType);
+
+            // Handle conditions based on washer status and vehicle type
+            if (washer == null)
+            {
+                return BadRequest(new { message = "No available active washers for this vehicle type." });
+            }
+
+            if (washer.WasherStatus != "Active")
+            {
+                return BadRequest(new { message = "No active washers available for this vehicle type." });
+            }
+
+            // Determine the order's location (prioritize customer location if provided, otherwise use washer location)
+            string location = orderDto.Location ?? customer.Address ?? washer.Address;
+
+            // Create a new order
+            var newOrder = new Order
+            {
+                CustomerId = orderDto.CustomerId,
+                WasherId = washer.WasherId,  // Automatically assigned washer
+                PackageId = orderDto.PackageId,
+                VehicleType = orderDto.VehicleType,
+                Status = "Pending",  // Default status is "Pending"
+                PaymentStatus = orderDto.PaymentStatus ?? "Pending",  // Default to Pending if not specified
+                OrderDate = DateTime.Now,
+                WashDate = orderDto.WashDate,
+                Location = location,  // Ensure location is assigned correctly
+                AddOnId = orderDto.AddOnId ?? 0,
+                TotalPrice = totalPrice
+            };
+
+            // Check whether the wash is "Wash Now" or "Scheduled"
+            if (newOrder.WashDate <= DateTime.Now)
+            {
+                newOrder.Status = "InProgress";  // Immediate wash
+                //newOrder.PaymentStatus = "Pending"; // Initially, payment is "Pending" for Wash Now
+
+                // Save the order and return a success message
+                await _orderRepository.CreateOrderAsync(newOrder);
+
+                return Ok(new { message = "Order placed successfully. Wash Now request placed.", order = newOrder });
+            }
+            else
+            {
+                newOrder.Status = "Scheduled";  // Scheduled wash
+
+                // Save the order and return a success message
+                await _orderRepository.CreateOrderAsync(newOrder);
+
+                return Ok(new { message = "Order placed successfully. Scheduled Wash request placed.", order = newOrder });
+            }
+        }
+
+        // GET: api/customers/{customerId}/orders
+        [Authorize(Roles ="Customer")]
+        [HttpGet("{customerId}/orders")]
+        public async Task<IActionResult> GetOrderHistory(int customerId)
+        {
+            // Fetch all orders for the given customerId
+            var orders = await _orderRepository.GetOrdersByCustomerIdAsync(customerId);
+
+            if (orders == null || orders.Count == 0)
+            {
+                return NotFound(new { message = "No orders found for this customer." });
+            }
+
+            // Return a success message along with the orders
+            return Ok(new
+            {
+                message = "Order history retrieved successfully.",
+                orders = orders.Select(order => new
+                {
+                    order.OrderId,
+                    order.Status,
+                    order.PaymentStatus,  // Include PaymentStatus here
+                    order.TotalPrice,
+                    order.WashDate,
+                    order.Location,
+                    order.OrderDate
+                })
+            });
+        }
+        
+
+        
+        // PUT: api/admin/washers/{washerId}/orders/{orderId}/start
+        [Authorize(Roles = "Admin")]
+        [HttpPut("washers/{washerId}/orders/{orderId}/start")]
+        public async Task<IActionResult> StartWashing(int washerId, int orderId)
+        {
+            // Retrieve the order using orderId
+            var order = await _orderRepository.GetOrderByIdAsync(orderId);
+            if (order == null)
+            {
+                return NotFound(new { message = "Order not found." });
+            }
+
+            // Retrieve the washer using washerId
+            var washer = await _washerRepository.GetWasherByIdAsync(washerId);
+            if (washer == null)
+            {
+                return NotFound(new { message = "Washer not found." });
+            }
+
+            // Ensure that the washer is active and available
+            if (washer.WasherStatus != "Active")
+            {
+                return BadRequest(new { message = "Washer is not active and cannot be assigned to this order." });
+            }
+
+            // Check if the order is eligible to start (i.e., it's not already completed or canceled)
+            if (order.Status == "Completed" || order.Status == "Cancelled")
+            {
+                return BadRequest(new { message = "This order has already been completed or cancelled." });
+            }
+
+            // Update the order status to "In Progress"
+            order.Status = "In Progress";
+
+            // Update the order in the repository
+            await _orderRepository.UpdateOrderAsync(order);
+
+            // Return success message
+            return Ok(new { message = "Order marked as 'In Progress' successfully.", orderId = order.OrderId, newStatus = order.Status });
+        }
+
+        [Authorize(Roles = "Admin")] // Only admins can access this endpoint        
+        [HttpPut("orders/{orderId}/status")]
+        public async Task<IActionResult> UpdateOrderStatus(int orderId, [FromBody] string status)
+        {
+            // Retrieve the order using orderId
+            var order = await _orderRepository.GetOrderByIdAsync(orderId);
+            if (order == null)
+            {
+                return NotFound(new { message = "Order not found." });
+            }
+
+            // Validate the provided status
+            var validStatuses = new string[] { "Pending", "InProgress", "Completed", "Cancelled" };
+            if (string.IsNullOrEmpty(status) || !Array.Exists(validStatuses, s => s == status))
+            {
+                return BadRequest(new { message = "Invalid status. Valid statuses are: Pending, InProgress, Completed, Cancelled." });
+            }
+
+            // Update the order status
+            order.Status = status;
+
+            // Update the order in the repository
+            await _orderRepository.UpdateOrderAsync(order);
+
+            // Return success message
+            return Ok(new { message = "Order status updated successfully.", orderId = order.OrderId, newStatus = order.Status });
+        }
+
+        // PUT: api/orders/{orderId}/complete
+        [Authorize(Roles = "Admin")]
+        [HttpPut("{orderId}/complete")]
+        [Authorize]
+        public async Task<IActionResult> MarkWashAsCompleted(int orderId)
+        {
+            var order = await _orderRepository.GetOrderByIdAsync(orderId);
+            if (order == null)
+            {
+                return NotFound(new { message = "Order not found." });
+            }
+
+            // Ensure the wash status is in progress before completing it
+            if (order.Status != "In Progress")
+            {
+                return BadRequest(new { message = "Order is not in progress, so it cannot be completed." });
+            }
+
+            // Update the order status to completed and mark payment as completed
+            order.Status = "Completed";
+            order.PaymentStatus = "Completed"; // Assuming payment is completed once the wash is completed
+
+            // Save changes
+            await _orderRepository.UpdateOrderAsync(order);
+
+            return Ok(new
+            {
+                message = "Wash completed successfully!",
+                order = new
+                {
+                    order.OrderId,
+                    order.CustomerId,
+                    order.PackageId,
+                    order.VehicleType,
+                    order.Status,
+                    order.PaymentStatus,
+                    order.WashDate,
+                    order.Location,
+                    order.TotalPrice
+                }
+            });
+        }
+
+        // GET: api/orders/{customerId}/total-price
+        [Authorize(Roles = "Admin")]
+        [HttpGet("{customerId}/total-price")]
+        [Authorize]
+        public async Task<IActionResult> GetTotalPrice(int customerId)
+        {
+            var orders = await _orderRepository.GetOrdersByCustomerIdAsync(customerId);
+            if (orders == null || !orders.Any())
+            {
+                return NotFound(new { message = "No orders found for this customer." });
+            }
+
+            decimal totalAmount = orders.Sum(order => order.TotalPrice);
+            return Ok(new { customerId = customerId, totalAmount });
+        }
+    }
+}
+
+
+--------------------------------------------------------------
+*** PaymentController ***
+
+using Microsoft.AspNetCore.Mvc;
+using CarWashAPI.DTO;
+using CarWashAPI.Repositories;
+using CarWashAPI.Models;
+using Microsoft.AspNetCore.Authorization;
+using System.Linq;
+
+namespace CarWashAPI.Controllers
+{
+    [Route("api/orders")]
+    [ApiController]
+    public class PaymentController : ControllerBase
+    {
+        private readonly IOrderRepository _orderRepository;
+        private readonly IWashPackageRepository _washPackageRepository;
+        private readonly IAddOnRepository _addOnRepository;
+        private readonly ICustomerRepository _customerRepository;
+        private readonly IWasherRepository _washerRepository;
+        private readonly ICarRepository _carRepository;
+        private readonly IPaymentRepository _paymentRepository;
+
+        public PaymentController(
+            IOrderRepository orderRepository, 
+            IWashPackageRepository washPackageRepository, 
+            IAddOnRepository addOnRepository,
+            ICustomerRepository customerRepository,
+            IWasherRepository washerRepository,
+            ICarRepository carRepository,
+            IPaymentRepository paymentRepository) 
+        {
+            _orderRepository = orderRepository;
+            _washPackageRepository = washPackageRepository;
+            _addOnRepository = addOnRepository;
+            _customerRepository = customerRepository;
+            _washerRepository = washerRepository;
+            _carRepository = carRepository;
+            _paymentRepository = paymentRepository;
+        }
+
+        // POST: api/customers/{customerId}/orders/{orderId}/payment
+        [Authorize(Roles ="Customer")]
+        [HttpPost("{customerId}/orders/{orderId}/payment")]
+        public async Task<IActionResult> MakePayment(int customerId, int orderId, [FromBody] PaymentDTO paymentDto)
+        {
+            // Check if the customer exists
+            var customer = await _customerRepository.GetCustomerByIdAsync(customerId);
+            if (customer == null)
+            {
+                return NotFound(new { message = "Customer not found." });
+            }
+
+            // Get the order associated with the customer
+            var order = await _orderRepository.GetOrderByIdAsync(orderId);
+            if (order == null || order.CustomerId != customerId)
+            {
+                return NotFound(new { message = "Order not found or does not belong to this customer." });
+            }
+
+            // Check if the order is eligible for payment
+            if (order.Status != "InProgress")
+            {
+                return BadRequest(new { message = "Order is not in progress and cannot be paid." });
+            }
+
+            // Create the payment object
+            var payment = new Payment
+            {
+                OrderId = orderId,
+                Amount = paymentDto.Amount,
+                PaymentMethod = paymentDto.PaymentMethod,
+                PaymentStatus = "Completed",  // Mark as "Completed" after payment
+                PaymentDate = DateTime.Now,
+                Receipt = GenerateReceipt(order, paymentDto)  // Generate receipt dynamically
+            };
+
+            // Save the payment
+            await _paymentRepository.CreatePaymentAsync(payment);
+
+            // Update the order's payment status
+            order.PaymentStatus = "Completed";
+            await _orderRepository.UpdateOrderAsync(order);
+
+            // Return a success message with the generated receipt
+            return Ok(new 
+            {
+                message = "Payment successful.",
+                paymentStatus = order.PaymentStatus,
+                receipt = payment.Receipt // Send receipt in response
+            });
+        }
+
+        private string GenerateReceipt(Order order, PaymentDTO paymentDto)
+        {
+            // You can customize this receipt generation logic as per your business needs.
+            return $"Receipt for Order ID {order.OrderId}\n" +
+                $"Customer: {order.CustomerId}\n" +
+                $"Amount Paid: {paymentDto.Amount:C}\n" +
+                $"Payment Method: {paymentDto.PaymentMethod}\n" +
+                $"Payment Status: Completed\n" +
+                $"Payment Date: {DateTime.Now}\n" +
+                $"Wash Package: {order.PackageId}\n" +
+                $"Location: {order.Location}\n" +
+                $"Wash Date: {order.WashDate}\n" +
+                $"Thank you for using our service!";
+        }
+
+        // PUT: api/orders/{orderId}/payment-status
+        [Authorize(Roles ="Customer")]
+        [HttpPut("{orderId}/payment-status")]
+        public async Task<IActionResult> UpdatePaymentStatus(int orderId, [FromBody] string newPaymentStatus)
+        {
+            var order = await _orderRepository.GetOrderByIdAsync(orderId);
+            if (order == null)
+            {
+                return NotFound(new { message = "Order not found." });
+            }
+
+            // Validating payment status transitions
+            if (newPaymentStatus != "Pending" && newPaymentStatus != "Completed")
+            {
+                return BadRequest(new { message = "Payment status can only be 'Pending' or 'Completed'." });
+            }
+
+            // Update the payment status
+            order.PaymentStatus = newPaymentStatus;
+            await _orderRepository.UpdateOrderAsync(order);
+
+            return Ok(new
+            {
+                message = $"Payment status updated to {newPaymentStatus}.",
+                order = new
+                {
+                    order.OrderId,
+                    order.CustomerId,
+                    order.PackageId,
+                    order.VehicleType,
+                    order.Status,
+                    order.PaymentStatus,
+                    order.WashDate,
+                    order.Location,
+                    order.TotalPrice
+                }
+            });
+        }
+
+        [Authorize(Roles = "Admin")]
+        [HttpGet("payments")]
+        public async Task<IActionResult> ViewPayments()
+        {
+            // Retrieve all payment transactions
+            var payments = await _paymentRepository.GetAllPaymentsAsync();
+
+            // If no payments are found, return a message
+            if (payments == null || payments.Count == 0)
+            {
+                return NotFound(new { message = "No payment transactions found." });
+            }
+
+            // Return the list of payments
+            return Ok(new { message = "Payments retrieved successfully.", payments });
+        }
+
+    }
+}
+
+-------------------------------------------------------------------------------------
+
+*** ReviewController ***
+
+using Microsoft.AspNetCore.Mvc;
+using CarWashAPI.DTO;
+using CarWashAPI.Repositories;
+using CarWashAPI.Models;
+using Microsoft.AspNetCore.Authorization;
+using System.Linq;
+namespace CarWashAPI.Controllers
+{
+    [Route("api/orders")]
+    [ApiController]
+    public class ReviewController : ControllerBase
+    {
+        private readonly IOrderRepository _orderRepository;
+        private readonly IWashPackageRepository _washPackageRepository;
+        private readonly IAddOnRepository _addOnRepository;
+        private readonly ICustomerRepository _customerRepository;
+        private readonly IWasherRepository _washerRepository;
+        private readonly ICarRepository _carRepository;
+        private readonly IPaymentRepository _paymentRepository;
+        private readonly IReviewRepository _reviewRepository;
+
+        public ReviewController(
+            IOrderRepository orderRepository, 
+            IWashPackageRepository washPackageRepository, 
+            IAddOnRepository addOnRepository,
+            ICustomerRepository customerRepository,
+            IWasherRepository washerRepository,
+            ICarRepository carRepository,
+            IPaymentRepository paymentRepository,
+            IReviewRepository reviewRepository) 
+        {
+            _orderRepository = orderRepository;
+            _washPackageRepository = washPackageRepository;
+            _addOnRepository = addOnRepository;
+            _customerRepository = customerRepository;
+            _washerRepository = washerRepository;
+            _carRepository = carRepository;
+            _paymentRepository = paymentRepository;
+            _reviewRepository = reviewRepository;
+        }
+
+        // POST: api/customers/{customerId}/reviews
+        [Authorize(Roles ="Customer")]
+        [HttpPost("{customerId}/reviews")]
+        public async Task<IActionResult> RateReviewWasher(int customerId, [FromBody] ReviewDTO reviewDto)
+        {
+            // Ensure the customer exists
+            var customer = await _customerRepository.GetCustomerByIdAsync(customerId);
+            if (customer == null)
+            {
+                return NotFound(new { message = "Customer not found." });
+            }
+
+            // Ensure the washer exists
+            var washer = await _washerRepository.GetWasherByIdAsync(reviewDto.WasherId);
+            if (washer == null)
+            {
+                return NotFound(new { message = "Washer not found." });
+            }
+
+            // Optional: You could also verify if the customer has actually completed an order with the washer.
+
+            // Validate the rating (ensure it's between 1 and 5)
+            if (reviewDto.Rating < 1 || reviewDto.Rating > 5)
+            {
+                return BadRequest(new { message = "Rating must be between 1 and 5." });
+            }
+
+            // Create the review object
+            var review = new Review
+            {
+                CustomerId = customerId,
+                WasherId = reviewDto.WasherId,
+                Rating = reviewDto.Rating,
+                Comment = reviewDto.Comment,
+                ReviewDate = DateTime.Now,
+                OrderId = reviewDto.OrderId // If there's a related order
+            };
+
+            // Save the review to the database
+            var savedReview = await _reviewRepository.AddReviewAsync(review);
+
+            // Return a success response with the saved review
+            return Ok(new { message = "Review submitted successfully.", review = savedReview });
+        }
+
+        // GET: api/customers/{customerId}/reviews
+        [Authorize(Roles ="Customer")]
+        [HttpGet("{customerId}/reviews")]
+        public async Task<IActionResult> GetCustomerReviews(int customerId)
+        {
+            // Ensure the customer exists
+            var customer = await _customerRepository.GetCustomerByIdAsync(customerId);
+            if (customer == null)
+            {
+                return NotFound(new { message = "Customer not found." });
+            }
+
+            // Retrieve all reviews written by the customer
+            var reviews = await _reviewRepository.GetReviewsByCustomerIdAsync(customerId);
+            if (reviews == null || !reviews.Any())
+            {
+                return NotFound(new { message = "No reviews found for this customer." });
+            }
+
+            // Return the reviews for the customer
+            return Ok(new { message = "Reviews retrieved successfully.", reviews});
+        }
+
+          // PUT: api/customers/{customerId}/reviews/{reviewId}/update
+        [Authorize(Roles ="Customer")]
+        [HttpPut("{customerId}/reviews/{reviewId}/update")]
+        public async Task<IActionResult> UpdateReview(int customerId, int reviewId, [FromBody] ReviewDTO reviewDto)
+        {
+            // Ensure the customer exists
+            var customer = await _customerRepository.GetCustomerByIdAsync(customerId);
+            if (customer == null)
+            {
+                return NotFound(new { message = "Customer not found." });
+            }
+
+            // Retrieve the review using reviewId
+            var review = await _reviewRepository.GetReviewByIdAsync(reviewId);
+            if (review == null)
+            {
+                return NotFound(new { message = "Review not found." });
+            }
+
+            // Ensure the logged-in customer is the one who created the review
+            var currentUserId = int.Parse(User.Identity.Name); // Assuming user ID is stored in JWT token
+            if (review.CustomerId != currentUserId && review.CustomerId != customerId)
+            {
+                return Unauthorized(new { message = "You are not authorized to update this review." });
+            }
+
+            // Validate the rating value (ensure it's between 1 and 5)
+            if (reviewDto.Rating < 1 || reviewDto.Rating > 5)
+            {
+                return BadRequest(new { message = "Rating must be between 1 and 5." });
+            }
+
+            // Update the review fields
+            review.Rating = reviewDto.Rating;
+            review.Comment = reviewDto.Comment;
+            review.ReviewDate = DateTime.Now; // Set the review date to the current time
+
+            // Save the updated review
+            await _reviewRepository.UpdateReviewAsync(review);
+
+            // Return success response
+            return Ok(new { message = "Review updated successfully.", review });
+        }
+
+        
+
+    }
+}
+
+
+--------------------------------------------------------------------------------
+
+*** WasherController *** 
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using System.Linq;
+using System.Security.Claims;
+using System.Threading.Tasks;
+using CarWashAPI.Repositories;
+using CarWashAPI.Models;
+using CarWashAPI.DTO;
+using BCrypt.Net;
+
+namespace CarWashAPI.Controllers
+{
+    [Authorize(Roles = "Admin")]
+    [Route("api/admin/")]
+    [ApiController]
+    public class WasherController : ControllerBase
+    {
+        private readonly IWasherRepository _washerRepository;
+
+        // Constructor injection of the repository
+        public WasherController(IWasherRepository washerRepository)
+        {
+            _washerRepository = washerRepository;
+        }
+
+        // POST: api/admin/AddWasher
+        [HttpPost("AddWasher")]
+        public async Task<IActionResult> AddWasher([FromBody] WasherDTO washerDto)
+        {
+            if (washerDto == null)
+            {
+                return BadRequest("Washer data is required.");
+            }
+
+            // Get AdminId from JWT (assuming AdminId is stored as a claim)
+            var adminIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
+            if (adminIdClaim == null)
+            {
+                return Unauthorized("AdminId is missing from token.");
+            }
+
+            var adminId = int.Parse(adminIdClaim.Value);  // Convert claim to int
+
+            // Hash the password (using BCrypt in this case)
+            var hashedPassword = BCrypt.Net.BCrypt.HashPassword(washerDto.Password);
+
+            // Create the Washer object to be added to the repository
+            var washer = new Washer
+            {
+                Name = washerDto.Name,
+                Email = washerDto.Email,
+                PhoneNumber = washerDto.PhoneNumber,
+                Address = washerDto.Address,
+                Password = hashedPassword,
+                Vehicle = washerDto.Vehicle,
+                WasherStatus = washerDto.WasherStatus,
+                AdminId = adminId // Associate the washer with the Admin
+            };
+
+            // Call the repository to add the washer
+            var success = await _washerRepository.AddWasherAsync(washer);
+
+            if (success)
+            {
+                return Ok(new { message = "Washer added successfully" });
+            }
+
+            return StatusCode(500, "Internal server error while adding the washer.");
+        }
+
+    
+
+        // GET: api/admin/washers/{washerId}
+        [HttpGet("washers/{washerId}")]
+        public async Task<IActionResult> GetWasherById(int washerId)
+        {
+            var washer = await _washerRepository.GetWasherByIdAsync(washerId);
+
+            if (washer == null)
+            {
+                return NotFound(new { message = $"Washer with ID {washerId} not found." });
+            }
+
+            return Ok(washer);
+        }
+
+        
+
+        // PUT: api/admin/washers/{washerId}
+        [HttpPut("washers/{washerId}")]
+        public async Task<IActionResult> UpdateWasher(int washerId, [FromBody] Washer washer)
+        {
+            var existingWasher = await _washerRepository.GetWasherByIdAsync(washerId);
+
+            if (existingWasher == null)
+            {
+                return NotFound(new { message = $"Washer with ID {washerId} not found." });
+            }
+
+            if (washer.WasherId != washerId)
+            {
+                return BadRequest(new { message = "Washer ID mismatch." });
+            }
+
+            existingWasher.Name = washer.Name ?? existingWasher.Name;
+            existingWasher.Email = washer.Email ?? existingWasher.Email;
+            existingWasher.PhoneNumber = washer.PhoneNumber ?? existingWasher.PhoneNumber;
+            existingWasher.Address = washer.Address ?? existingWasher.Address;
+            existingWasher.Password = washer.Password ?? existingWasher.Password; // Hash password if needed
+            existingWasher.Vehicle = washer.Vehicle ?? existingWasher.Vehicle;
+            existingWasher.WasherStatus = washer.WasherStatus ?? existingWasher.WasherStatus;
+
+            await _washerRepository.UpdateWasherAsync(existingWasher);
+
+            return Ok(new { message = "Washer details updated successfully.", washer = existingWasher });
+        }
+
+        // DELETE: api/admin/washers/{washerId}/delete
+        [HttpDelete("washers/{washerId}/delete")]
+        public async Task<IActionResult> DeleteWasher(int washerId)
+        {
+            var washer = await _washerRepository.GetWasherByIdAsync(washerId);
+            if (washer == null)
+            {
+                return NotFound(new { message = "Washer not found." });
+            }
+
+            await _washerRepository.DeleteWasherAsync(washerId);
+
+            return Ok(new { message = "Washer account deleted successfully." });
+        }
+    }
+}
+
+
+-----------------------------------------------------------------------------
+
+*** WashPackageController ***
+
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using System.Linq;
+using System.Threading.Tasks;
+using CarWashAPI.Models;
+using CarWashAPI.DTO;
+using CarWashAPI.Repositories;
+
+namespace CarWashAPI.Controllers
+{
+    [Authorize(Roles = "Admin")]
+    [Route("api/admin/")]
+    [ApiController]
+    public class WashPackageController : ControllerBase
+    {
+        private readonly IWashPackageRepository _washPackageRepository;
+
+        // Constructor injection for the repository
+        public WashPackageController(IWashPackageRepository washPackageRepository)
+        {
+            _washPackageRepository = washPackageRepository;
+        }
+
+        // POST: api/admin/packages
+        [HttpPost("packages")]
+        public async Task<IActionResult> CreatePackage([FromBody] WashPackageDTO packageDto)
+        {
+            if (packageDto == null)
+            {
+                return BadRequest(new { message = "Package data is required. Please provide the necessary information." });
+            }
+
+            // Create a new WashPackage from DTO
+            var package = new WashPackage
+            {
+                PackageName = packageDto.PackageName,
+                Price = packageDto.Price,
+                Description = packageDto.Description
+            };
+
+            // Add the package to the repository
+            var createdPackage = await _washPackageRepository.CreatePackageAsync(package);
+
+            return CreatedAtAction(nameof(GetPackageById), new { packageId = createdPackage.PackageId }, new 
+            { 
+                message = "Package created successfully.", 
+                package = createdPackage 
+            });
+        }
+
+        // GET: api/admin/packages
+        [HttpGet("packages")]
+        public async Task<IActionResult> GetAllPackages()
+        {
+            var packages = await _washPackageRepository.GetAllPackagesAsync();
+
+            if (packages == null || !packages.Any())
+            {
+                return NotFound(new { message = "No wash packages found." });
+            }
+
+            return Ok(new { message = "Fetched all wash packages successfully.", packages });
+        }
+
+        // GET: api/admin/packages/{packageId}
+        [HttpGet("packages/{packageId}")]
+        public async Task<IActionResult> GetPackageById(int packageId)
+        {
+            var package = await _washPackageRepository.GetPackageByIdAsync(packageId);
+
+            if (package == null)
+            {
+                return NotFound(new { message = $"No package found with ID {packageId}." });
+            }
+
+            return Ok(new { message = "Package fetched successfully.", package });
+        }
+
+        // PUT: api/admin/packages/{packageId}
+        [HttpPut("packages/{packageId}")]
+        public async Task<IActionResult> UpdatePackage(int packageId, [FromBody] WashPackageDTO packageDto)
+        {
+            if (packageDto == null)
+            {
+                return BadRequest(new { message = "Package data is required." });
+            }
+
+            // Fetch the existing package from the repository
+            var existingPackage = await _washPackageRepository.GetPackageByIdAsync(packageId);
+            
+            if (existingPackage == null)
+            {
+                return NotFound(new { message = $"No package found with ID {packageId}." });
+            }
+
+            // Update the package fields with the incoming data, if available
+            existingPackage.PackageName = !string.IsNullOrWhiteSpace(packageDto.PackageName) ? packageDto.PackageName : existingPackage.PackageName;
+            existingPackage.Price = packageDto.Price > 0 ? packageDto.Price : existingPackage.Price;
+            existingPackage.Description = !string.IsNullOrWhiteSpace(packageDto.Description) ? packageDto.Description : existingPackage.Description;
+
+            // Call the repository to update the package in the database
+            await _washPackageRepository.UpdatePackageAsync(existingPackage);
+
+            // Return a success message with the updated package
+            return Ok(new { message = "Package updated successfully.", package = existingPackage });
+        }
+
+        // DELETE: api/admin/packages/{packageId}
+        [HttpDelete("packages/{packageId}")]
+        public async Task<IActionResult> DeletePackage(int packageId)
+        {
+            var package = await _washPackageRepository.GetPackageByIdAsync(packageId);
+            if (package == null)
+            {
+                return NotFound(new { message = $"No package found with ID {packageId}." });
+            }
+
+            // Delete the package from the repository
+            await _washPackageRepository.DeletePackageAsync(packageId);
+
+            return Ok(new { message = "Package deleted successfully." });
+        }
+
+        
+    }
+}
